@@ -18,7 +18,7 @@ export interface AppShellProps {
 }
 
 /** Routes rendered without the authenticated app chrome */
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/signup", "/verify-email"];
 
 type SessionStatus = "checking" | "authenticated" | "unauthenticated" | "error";
 
