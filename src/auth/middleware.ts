@@ -8,7 +8,11 @@ import { NextRequest, NextResponse } from "next/server";
 import type { AuthContext, User, UserRole, Permission } from "./types";
 import { verifySessionToken, SESSION_COOKIE_NAME } from "./tokens";
 import { checkResourceAccess } from "./service";
-import { getSessionRecord, getInvestigationAccessInfo } from "./user-store";
+import {
+  getSessionRecord,
+  getInvestigationAccessInfo,
+  findUserByEmail,
+} from "./user-store";
 
 /**
  * Extract session token from request
@@ -35,7 +39,42 @@ function getSessionToken(request: NextRequest): string | null {
  * Verifies the HMAC-signed session token (see ./tokens). Returns null
  * for missing, malformed, tampered, or expired tokens - fail closed.
  */
+/**
+ * PUBLIC_ACCESS_MODE: a reversible, environment-gated switch that lets everyone
+ * into the app without credentials. When VANTAGE_PUBLIC_MODE=true, this acts as
+ * the platform owner so all protected routes and /api/auth/me work freely.
+ *
+ * This is intended for demo/pilot phases while email/auth is not yet provisioned.
+ * Set VANTAGE_PUBLIC_MODE=false (or unset it) to restore real authentication -
+ * no code change required. It never applies when the flag is absent.
+ */
+async function getPublicModeContext(): Promise<AuthContext | null> {
+  if (process.env.VANTAGE_PUBLIC_MODE !== "true") return null;
+  try {
+    const owner = await findUserByEmail("owner@vantage.local");
+    if (owner) {
+      return {
+        userId: owner.id,
+        email: owner.email,
+        role: owner.role,
+        organizationId: owner.organizationId ?? undefined,
+      };
+    }
+  } catch {
+    // Fall through to the guest default below if the DB lookup fails.
+  }
+  return {
+    userId: "public-guest",
+    email: "guest@vantage.local",
+    role: "owner",
+    organizationId: undefined,
+  };
+}
+
 export async function getAuthContext(request: NextRequest): Promise<AuthContext | null> {
+  const publicContext = await getPublicModeContext();
+  if (publicContext) return publicContext;
+
   const token = getSessionToken(request);
   const session = verifySessionToken(token);
 
