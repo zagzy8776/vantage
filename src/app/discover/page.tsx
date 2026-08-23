@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import { SearchFilters } from "@/components/features/SearchFilters";
 import { LeadCard } from "@/components/ui/LeadCard";
 import { Button } from "@/components/ui/Button";
@@ -55,6 +56,7 @@ export default function DiscoverPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [workflowStage, setWorkflowStage] = useState<string | null>(null);
   const [lastRunId, setLastRunId] = useState<string | null>(null);
+  const [stillRunningNotice, setStillRunningNotice] = useState(false);
   const [showCreateInvestigation, setShowCreateInvestigation] = useState(false);
   const [investigationTitle, setInvestigationTitle] = useState("");
   const [investigationObjective, setInvestigationObjective] = useState("");
@@ -74,7 +76,8 @@ export default function DiscoverPage() {
     setError(null);
     setIsForbidden(false);
     setHasSearched(true);
-    setWorkflowStage(filters.queryExpansion && filters.depth !== "quick" ? "Interpreting query" : "Searching businesses");
+    setStillRunningNotice(false);
+    setWorkflowStage("Queued for research worker");
 
     try {
       const response = await fetch("/api/discover", {
@@ -95,20 +98,48 @@ export default function DiscoverPage() {
       if (!runId) throw new Error("Discovery did not return a search run ID.");
       setLastRunId(runId);
 
+      // Durable execution: the run is queued server-side and processed by the
+      // sweep worker (Vercel Cron / in-process sweeper). Poll with a sane
+      // interval; after a short grace period tell the user they can leave.
+      const POLL_INTERVAL_MS = 2500;
+      const STILL_RUNNING_AFTER_MS = 25_000;
+      const MAX_POLL_MS = 15 * 60_000;
+
       let payload: Record<string, unknown> & { results?: unknown[]; resultSources?: string[][]; providers?: Record<string, { status: string; count: number; queried: boolean }>; totalUniqueResults?: number; fallbackUsed?: boolean; workflow?: { stage?: string }; storedIds?: string[] } | null = null;
-      for (let attempt = 0; attempt < 180; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 750));
+      const pollStartedAt = Date.now();
+      while (Date.now() - pollStartedAt < MAX_POLL_MS) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         const stateResponse = await fetch(`/api/discover/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });
         const state = await stateResponse.json().catch(() => null);
         if (!stateResponse.ok) throw new Error(state?.error ?? "Search run state is unavailable.");
-        setWorkflowStage(stageLabel(state?.stages) ?? (state?.status === "created" ? "Interpreting query" : workflowStage));
+
+        if (state?.status === "queued" || state?.status === "created") {
+          setWorkflowStage("Queued for research worker");
+        } else {
+          const stage = stageLabel(state?.stages);
+          if (stage) setWorkflowStage(stage);
+        }
+
+        if (Date.now() - pollStartedAt > STILL_RUNNING_AFTER_MS) {
+          setStillRunningNotice(true);
+        }
+
         if (["completed", "completed_with_errors", "failed"].includes(state?.status)) {
           if (state.status === "failed") throw new Error("Deep discovery failed. Inspect the search run diagnostics.");
           payload = state.result;
           break;
         }
       }
-      if (!payload) throw new Error("Deep discovery did not complete within the polling window.");
+
+      if (!payload) {
+        // Research legitimately takes minutes. Stop spinning - the sweep
+        // worker keeps processing server-side and the Search Run page always
+        // reflects the latest state.
+        setStillRunningNotice(true);
+        setIsLoading(false);
+        return;
+      }
+      setStillRunningNotice(false);
 
       const nextResults: Lead[] = (payload?.results as ResultBusiness[] | undefined ?? []).map((business, index) => {
         const normalizedBusiness = business as NormalizedBusiness;
@@ -137,6 +168,7 @@ export default function DiscoverPage() {
       setFallbackUsed(false);
       setError(err instanceof Error ? err.message : "Discovery failed.");
       setWorkflowStage(null);
+      setStillRunningNotice(false);
     } finally {
       setIsLoading(false);
     }
@@ -269,7 +301,30 @@ export default function DiscoverPage() {
               </div>
             )}
             {isLoading ? (
-              <LoadingState message={workflowStage ?? "Searching configured discovery providers and storing opportunities..."} rows={4} />
+              <div className="space-y-3">
+                <LoadingState message={workflowStage ?? "Searching configured discovery providers and storing opportunities..."} rows={4} />
+                {stillRunningNotice && (
+                  <div className="border border-info/40 bg-info/5 rounded-lg p-4 space-y-2">
+                    <p className="text-sm font-semibold text-foreground">Research is still running. You can leave this page — VANTAGE will continue processing it.</p>
+                    <p className="text-xs text-subtle">Deep discovery typically takes a few minutes. Results land on the Search Run page as providers report back.</p>
+                    {lastRunId && (
+                      <Link href={`/discover/runs/${encodeURIComponent(lastRunId)}`} className="inline-flex items-center gap-1 text-xs text-accent hover:underline font-mono">
+                        View Search Run →
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : stillRunningNotice && !error ? (
+              <div className="border border-info/40 bg-info/5 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-semibold text-foreground">Research is still running. You can leave this page — VANTAGE will continue processing it.</p>
+                <p className="text-xs text-subtle">This deep search takes several minutes. The Search Run page always shows the latest state.</p>
+                {lastRunId && (
+                  <Link href={`/discover/runs/${encodeURIComponent(lastRunId)}`} className="inline-flex items-center gap-1 text-xs text-accent hover:underline font-mono">
+                    View Search Run →
+                  </Link>
+                )}
+              </div>
             ) : error ? (
               isForbidden ? (
                 <AccessDenied

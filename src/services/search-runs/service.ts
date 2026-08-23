@@ -1,9 +1,9 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { searchRuns } from "@/lib/db/schema";
 import type { DiscoveryQuery } from "@/providers/business/types";
 
-export type SearchRunStatus = "created" | "running" | "completed" | "completed_with_errors" | "failed";
+export type SearchRunStatus = "queued" | "created" | "running" | "completed" | "completed_with_errors" | "failed";
 export type SearchStageName = "interpreting_query" | "business_discovery" | "web_discovery" | "candidate_merge" | "verification" | "website_enrichment" | "pagespeed" | "ai_analysis" | "finalization";
 export type SearchStageStatus = "pending" | "running" | "completed" | "completed_with_errors" | "failed" | "skipped";
 
@@ -80,10 +80,9 @@ export async function createSearchRun(query: DiscoveryQuery) {
     queryExpansion: query.queryExpansion ? 1 : 0,
     evidenceEnrichment: query.evidenceEnrichment ? 1 : 0,
     searchSource: query.searchSource ?? null,
-    status: "created",
+    status: "queued",
     stages: initialStages(),
     failures: [],
-    startedAt: now,
     createdAt: now,
   });
   return id;
@@ -166,7 +165,7 @@ export async function getSearchRun(id: string) {
 export async function ensureSearchRunTerminal(id: string, error?: unknown) {
   try {
     const run = await getSearchRun(id);
-    if (!run || run.status !== "running" && run.status !== "created") return;
+    if (!run || !["queued", "created", "running"].includes(run.status)) return;
     const activeStage = Object.entries(run.stages ?? {}).find(([, stage]) => stage.status === "running")?.[0] as SearchStageName | undefined;
     if (activeStage) await updateSearchStage(id, activeStage, "failed");
     const failure = error ? safeFailure(id, "finalization", error, { provider: "orchestrator" }) : undefined;
@@ -183,4 +182,101 @@ export async function ensureSearchRunTerminal(id: string, error?: unknown) {
 
 export async function getRecentSearchRuns(limit = 20) {
   return getDb().select().from(searchRuns).orderBy(desc(searchRuns.createdAt)).limit(limit);
+}
+
+const TERMINAL_SEARCH_RUN_STATUSES: SearchRunStatus[] = ["completed", "completed_with_errors", "failed"];
+
+export function isTerminalSearchRunStatus(status: string | null | undefined): boolean {
+  return Boolean(status && (TERMINAL_SEARCH_RUN_STATUSES as readonly string[]).includes(status));
+}
+
+export function isActiveSearchRunStatus(status: string | null | undefined): boolean {
+  return Boolean(status && ["queued", "created", "running"].includes(status));
+}
+
+/**
+ * List Search Runs that are candidates for durable recovery. A run is
+ * recoverable when it is still active (queued/created/running) AND its
+ * acquisition lock is absent or stale. This excludes any run a live worker
+ * currently holds, so two cron invocations cannot recover the same run.
+ */
+export async function listRecoverableSearchRuns(opts: {
+  staleLockMs: number;
+  limit: number;
+}): Promise<Array<typeof searchRuns.$inferSelect>> {
+  const staleBoundary = new Date(Date.now() - opts.staleLockMs);
+  return getDb()
+    .select()
+    .from(searchRuns)
+    .where(
+      and(
+        inArray(searchRuns.status, ["queued", "created", "running"]),
+        or(
+          isNull(searchRuns.lockAcquiredAt),
+          lt(searchRuns.lockAcquiredAt, staleBoundary)
+        )
+      )
+    )
+    .orderBy(desc(searchRuns.createdAt))
+    .limit(opts.limit);
+}
+
+/**
+ * Atomically claim a Search Run for recovery. Returns true only when the call
+ * swapped its lock from absent/stale to ours - safe under concurrent workers.
+ */
+export async function claimSearchRunForRecovery(
+  runId: string,
+  workerId: string,
+  staleLockMs: number
+): Promise<boolean> {
+  const staleBoundary = new Date(Date.now() - staleLockMs);
+  const rows = await getDb()
+    .update(searchRuns)
+    .set({ workerId, lockAcquiredAt: new Date() })
+    .where(
+      and(
+        eq(searchRuns.id, runId),
+        inArray(searchRuns.status, ["queued", "created", "running"]),
+        or(isNull(searchRuns.lockAcquiredAt), lt(searchRuns.lockAcquiredAt, staleBoundary))
+      )
+    )
+    .returning({ id: searchRuns.id });
+  return rows.length > 0;
+}
+
+/** Release a worker's lock if we still own it (no-op for other workers). */
+export async function releaseSearchRunLock(runId: string, workerId: string): Promise<void> {
+  const rows = await getDb()
+    .select({ workerId: searchRuns.workerId })
+    .from(searchRuns)
+    .where(eq(searchRuns.id, runId))
+    .limit(1);
+  if (rows[0]?.workerId !== workerId) return;
+  await getDb()
+    .update(searchRuns)
+    .set({ workerId: null, lockAcquiredAt: null })
+    .where(eq(searchRuns.id, runId));
+}
+
+/**
+ * Reconstruct a DiscoveryQuery from a persisted Search Run row so the recovery
+ * worker can resume it. Region is not persisted on search_runs; it degrades
+ * gracefully (optional in DiscoveryQuery).
+ */
+export function discoveryQueryFromSearchRun(
+  row: Pick<typeof searchRuns.$inferSelect, "query" | "country" | "city" | "depth" | "queryExpansion" | "evidenceEnrichment" | "searchSource">
+): DiscoveryQuery {
+  return {
+    category: row.query,
+    country: row.country,
+    city: row.city ?? undefined,
+    region: undefined,
+    limit: Math.max(1, Number(process.env.MAX_DISCOVERY_PROVIDER_SEARCHES) || 5),
+    depth: row.depth,
+    searchSource: (row.searchSource as DiscoveryQuery["searchSource"]) ?? "best-available",
+    queryExpansion: row.queryExpansion === 1,
+    evidenceEnrichment: row.evidenceEnrichment === 1,
+    webDiscoveryProvider: "best-available",
+  };
 }

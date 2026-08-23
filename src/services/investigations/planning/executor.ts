@@ -72,6 +72,27 @@ export async function runInvestigationExecutionWorker(investigationId: string, e
 
 export const reconcileInvestigationPlanExecution = runInvestigationExecutionWorker;
 
+/**
+ * Bounded reconciliation for scheduled (cron) invocation on serverless.
+ * Processes at most maxExecutions active plan executions, one worker tick
+ * each. Since launches are durable handoffs (Search Runs queued for the
+ * recovery sweeper), a tick never blocks on multi-minute provider work.
+ */
+export async function reconcileActiveInvestigationExecutions(maxExecutions = 2): Promise<{ examined: number; processed: string[] }> {
+  const refs = await databaseExecutionStore.listActiveExecutionRefs();
+  const bounded = refs.slice(0, Math.max(1, maxExecutions));
+  const processed: string[] = [];
+  for (const ref of bounded) {
+    try {
+      await sharedWorker.tick(ref.investigationId, ref.id);
+      processed.push(ref.id);
+    } catch {
+      // The next sweep retries this execution.
+    }
+  }
+  return { examined: refs.length, processed };
+}
+
 export async function requestExecutionCancellation(investigationId: string, executionId: string): Promise<InvestigationPlanExecution | null> {
   const row = await readExecutionRow(executionId);
   if (!row || row.investigationId !== investigationId) throw new Error("Execution not found.");

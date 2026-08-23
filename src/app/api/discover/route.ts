@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { discoverBusinesses, failDiscoveryRun } from "@/lib/discover/service";
 import { validateDiscoveryQuery } from "@/lib/discover/validation";
 import { createSearchRun } from "@/services/search-runs/service";
 import { requireRole } from "@/auth/middleware";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * POST /api/discover
+ *
+ * Creates a Search Run as durable state (status "queued") and returns
+ * immediately. The scheduled sweep worker (/api/system/sweep via Vercel Cron,
+ * or the in-process sweeper on long-lived runtimes) dispatches queued runs
+ * through the discovery engine. No fire-and-forget promise is used: a
+ * serverless response must never be relied upon to keep work alive.
+ */
 export async function POST(request: NextRequest) {
   // Discovery triggers paid provider calls - analyst access or higher required
   const auth = await requireRole(request, ["owner", "admin", "analyst"]);
@@ -20,20 +28,10 @@ export async function POST(request: NextRequest) {
     }
 
     const runId = await createSearchRun(validation.query);
-    void Promise.resolve(discoverBusinesses(validation.query, runId)).catch((error) => failDiscoveryRun(runId, error));
-    return NextResponse.json({ runId, status: "created", summary: { discovered: 0, webCandidates: 0, verified: 0, enriched: 0, analyzed: 0 } }, { status: 202 });
+    return NextResponse.json({ runId, status: "queued" }, { status: 202 });
   } catch (error) {
-    if (error instanceof Error && error.message.includes("FOURSQUARE_API_KEY")) {
-      return NextResponse.json({ error: "Discovery provider is not configured yet." }, { status: 503 });
-    }
-
     if (error instanceof Error && error.message.includes("DATABASE_URL")) {
       return NextResponse.json({ error: "Discovery database is unavailable." }, { status: 503 });
-    }
-
-    const status = (error as { status?: number } | undefined)?.status;
-    if (status === 429) {
-      return NextResponse.json({ error: "Discovery provider is temporarily rate-limited. Please try again later." }, { status: 429 });
     }
 
     return NextResponse.json({ error: "Unexpected discovery error. Please try again." }, { status: 500 });

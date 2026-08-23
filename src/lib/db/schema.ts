@@ -257,6 +257,8 @@ export const searchRuns = pgTable(
     durationMs: integer("duration_ms"),
     status: text("status").notNull().default("completed"),
     errorCode: text("error_code"),
+    workerId: text("worker_id"),
+    lockAcquiredAt: timestamp("lock_acquired_at", { withTimezone: true, mode: "date" }),
     startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
     completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
     stages: jsonb("stages").$type<Record<string, { status: string; startedAt?: string; completedAt?: string; durationMs?: number; count?: number; errorCount?: number; provider?: string }>>(),

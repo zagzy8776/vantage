@@ -137,38 +137,11 @@ export class ExecutionWorker {
       const searchRunId = await this.deps.createSearchRun(queryForStep(plan, planStep, category, remaining.candidates));
       await this.deps.attachSearchRun(execution.investigationId, searchRunId);
       const searchRunIds = [...(step.searchRunIds ?? []), searchRunId];
-      await this.deps.store.patchStep(step.id, { searchRunIds, provider: "existing-discovery-pipeline", reason: "Search Run created; durable worker monitors its lifecycle.", actualUsage: sumUsage([step.actualUsage, required]) });
+      await this.deps.store.patchStep(step.id, { searchRunIds, provider: "existing-discovery-pipeline", reason: "Search Run queued for the durable execution worker.", actualUsage: sumUsage([step.actualUsage, required]) });
       await this.deps.store.addUsage(execution.id, required);
       step = { ...step, searchRunIds };
       launched = true;
-      const query = queryForStep(plan, planStep, category, remaining.candidates);
-      // Implement bounded retry logic for provider failures
-      let retryCount = 0;
-      const maxRetries = 2;
-      let retryDelay = 100; // Reduced from 1000ms for faster testing
-
-      const attemptDiscovery = async () => {
-        try {
-          await this.deps.runDiscovery(query, searchRunId);
-        } catch (error) {
-          if (retryCount < maxRetries) {
-            retryCount++;
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-            retryDelay *= 2; // Exponential backoff
-            await attemptDiscovery();
-            return;
-          }
-          await this.deps.store.patchStep(step.id, {
-            status: "completed_with_errors",
-            reason: `Discovery failed after ${maxRetries} attempts: ${error instanceof Error ? error.message : "Unknown error"}`,
-            errorCategory: "provider_error",
-            safeMessage: "The discovery provider failed after retry attempts.",
-            completedAt: this.deps.now()
-          });
-        }
-      };
-
-      await attemptDiscovery().catch(() => undefined);
+      this.deps.logEvent({ diagnostic: "search_run_queued", executionId: execution.id, stepId: step.id, searchRunId });
     }
     if (!launched) {
       await this.deps.store.patchStep(step.id, { status: "skipped", reason: "No categories configured.", completedAt: this.deps.now() });
