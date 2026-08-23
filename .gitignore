@@ -1,0 +1,65 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files — NEVER commit secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# vercel
+.vercel
+
+# ── local validation / debug artifacts ────────────────────────────────────────
+# Manual smoke-test and milestone validation runs must never enter source control.
+*.log
+*.pid
+*.exit
+*.err
+
+# ── AI assistant workspace data ────────────────────────────────────────────────
+# Contains private conversation/task history. NEVER commit.
+.kilo/
+.kilocode/
+
+# ── raw run/investigation output dumps ────────────────────────────────────────
+# Real investigation data and provider payloads belong in archives, not git.
+deep-search3-report.json
+deep-search3-report-readable.txt
+milestone8-live-test-report.json
+real-lead-analysis.json
+*-run-id.txt
+
+tsconfig.sublime-workspace
+
+# ── internal engineering reports ──────────────────────────────────────────────
+# Kept locally for engineering history; not published (contain real client-
+# investigation data and internal candid assessments).
+/docs/reports/
+
+*-run-id.txt
+.*run-id*
+tsconfig.sublime-workspace

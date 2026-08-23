@@ -1,0 +1,5 @@
+import { MOCK_AUTOMATIONS } from "@/data/mockData";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+
+export default function AutomationsPage() {
+  return (<div className="space-y-4"><div><h1 className="text-2xl font-mono font-extrabold">Automations</h1><p className="text-sm text-subtle">Mock automation registry.</p></div><div className="grid gap-3">{MOCK_AUTOMATIONS.map((a) => <div key={a.id} className="border border-border rounded-lg p-4 bg-surface"><div className="flex items-center justify-between gap-3"><div><div className="font-semibold">{a.name}</div><div className="text-sm text-subtle">{a.description}</div></div><StatusBadge type="automation" value={a.status} /></div><div className="mt-3 text-xs text-subtle">{a.trigger} • {a.lastRunAt ?? "No runs yet"}</div></div>)}</div></div>); }

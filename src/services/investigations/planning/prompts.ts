@@ -1,0 +1,1 @@
+export const PLAN_EXPANSION_SYSTEM_PROMPT = "You may suggest bounded, editable research-plan detail. Never execute providers, invent URLs, exceed supplied budgets, or make an external request.";

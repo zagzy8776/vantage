@@ -1,0 +1,3 @@
+export interface InvestigationTraceLink { objectiveId: string; planId: string; planStepId?: string; executionId?: string; searchRunId?: string; evidenceIds?: string[]; claimIds?: string[]; findingIds?: string[]; opportunityIds?: string[]; actionIds?: string[]; }
+
+export function traceForExecution(input: InvestigationTraceLink): InvestigationTraceLink { return { ...input, evidenceIds: input.evidenceIds ?? [], claimIds: input.claimIds ?? [], findingIds: input.findingIds ?? [], opportunityIds: input.opportunityIds ?? [], actionIds: input.actionIds ?? [] }; }

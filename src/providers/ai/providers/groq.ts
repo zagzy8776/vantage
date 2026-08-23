@@ -1,0 +1,2 @@
+import { createOpenAICompatibleProvider } from "./shared";
+export const groqProvider = createOpenAICompatibleProvider({ provider: "groq", endpoint: "https://api.groq.com/openai/v1/chat/completions", apiKeyEnv: "GROQ_API_KEY", modelEnv: "GROQ_MODEL", defaultModel: "openai/gpt-oss-20b" });

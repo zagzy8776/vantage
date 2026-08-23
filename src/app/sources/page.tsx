@@ -1,0 +1,1 @@
+export default function SourcesPage() { return <div className="space-y-2"><h1 className="text-2xl font-mono font-extrabold">Sources</h1><p className="text-sm text-subtle">Future business and website data sources will appear here.</p></div>; }

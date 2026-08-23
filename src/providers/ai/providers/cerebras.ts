@@ -1,0 +1,2 @@
+import { createOpenAICompatibleProvider } from "./shared";
+export const cerebrasProvider = createOpenAICompatibleProvider({ provider: "cerebras", endpoint: "https://api.cerebras.ai/v1/chat/completions", apiKeyEnv: "CEREBRAS_API_KEY", modelEnv: "CEREBRAS_MODEL", defaultModel: "gpt-oss-120b" });

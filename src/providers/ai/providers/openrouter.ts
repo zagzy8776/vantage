@@ -1,0 +1,2 @@
+import { createOpenAICompatibleProvider } from "./shared";
+export const openRouterProvider = createOpenAICompatibleProvider({ provider: "openrouter", endpoint: "https://openrouter.ai/api/v1/chat/completions", apiKeyEnv: "OPENROUTER_API_KEY", modelEnv: "OPENROUTER_MODEL", defaultModel: "meta-llama/llama-3.1-8b-instruct:free", headers: { "HTTP-Referer": process.env.VANTAGE_APP_URL ?? "http://localhost:3000", "X-Title": "VANTAGE" } });

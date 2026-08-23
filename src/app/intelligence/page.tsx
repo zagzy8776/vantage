@@ -1,0 +1,1 @@
+export default function IntelligencePage() { return <div className="space-y-2"><h1 className="text-2xl font-mono font-extrabold">Intelligence</h1><p className="text-sm text-subtle">Reserved intelligence workspace for future market analysis and research pipelines.</p></div>; }

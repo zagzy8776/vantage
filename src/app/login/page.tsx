@@ -1,0 +1,154 @@
+"use client";
+
+import React, { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import {
+  fetchCurrentUser,
+  login,
+  resolveSafeRedirect,
+} from "@/lib/auth-client";
+
+function LoginForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = resolveSafeRedirect(searchParams.get("next"));
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+
+  // Already signed in? Skip the form entirely.
+  useEffect(() => {
+    let cancelled = false;
+    fetchCurrentUser()
+      .then((user) => {
+        if (!cancelled && user) router.replace(nextPath);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setIsCheckingSession(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError(null);
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setFormError("Email and password are required.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await login(trimmedEmail, password);
+      if (!result.ok) {
+        setFormError(result.error ?? "Invalid email or password.");
+        return;
+      }
+      // Session cookie is now set by the server - full navigation so the
+      // app shell re-mounts with authenticated state.
+      window.location.assign(nextPath);
+    } catch {
+      setFormError("Sign-in is temporarily unavailable. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isCheckingSession) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <svg className="animate-spin h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      <Input
+        label="Email"
+        type="email"
+        name="email"
+        autoComplete="email"
+        autoFocus
+        required
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="you@company.com"
+        disabled={isSubmitting}
+      />
+      <Input
+        label="Password"
+        type="password"
+        name="password"
+        autoComplete="current-password"
+        required
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="••••••••"
+        disabled={isSubmitting}
+      />
+      {formError && (
+        <p role="alert" className="text-xs text-danger border border-danger/30 bg-danger/5 rounded-md px-3 py-2">
+          {formError}
+        </p>
+      )}
+      <Button type="submit" size="lg" isLoading={isSubmitting} className="w-full">
+        Sign In
+      </Button>
+    </form>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <main className="min-h-screen flex items-center justify-center p-4 sm:p-6">
+      <div className="w-full max-w-sm">
+        {/* Branding */}
+        <div className="flex flex-col items-center gap-2 mb-8">
+          <div className="w-11 h-11 rounded-lg bg-accent/15 border border-accent/40 flex items-center justify-center">
+            <span className="font-mono font-extrabold text-accent text-base">VT</span>
+          </div>
+          <h1 className="font-extrabold tracking-widest text-foreground font-mono text-xl">VANTAGE</h1>
+          <p className="text-[11px] uppercase font-mono tracking-[0.25em] text-accent">Lead Intelligence</p>
+        </div>
+
+        <div className="border border-border rounded-lg bg-surface p-6 shadow-sm">
+          <h2 className="text-sm font-bold text-foreground mb-1">Sign in to your workspace</h2>
+          <p className="text-xs text-subtle mb-5">
+            Access is restricted to authorized VANTAGE accounts.
+          </p>
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-16">
+                <svg className="animate-spin h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+            }
+          >
+            <LoginForm />
+          </Suspense>
+        </div>
+
+        <p className="text-center text-[10px] font-mono text-subtle mt-6">
+          VANTAGE · Secure session · HttpOnly cookie
+        </p>
+      </div>
+    </main>
+  );
+}

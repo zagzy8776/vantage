@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /*
+     * VANTAGE design tokens — dark-first, single source of truth.
+     * HSL channel values consumed by `tailwind.config.ts`. Re-theme the
+     * product by editing this block only; never hard-code colors in
+     * components.
+     */
+    --background: 220 18% 5%;
+    --surface: 220 16% 7%;
+    --surface-2: 220 14% 11%;
+    --border: 220 12% 15%;
+    --border-strong: 220 11% 22%;
+
+    --foreground: 218 28% 93%;
+    --muted: 218 12% 64%;
+    --subtle: 218 10% 45%;
+
+    --accent: 43 84% 58%;
+    --accent-foreground: 30 40% 8%;
+
+    --success: 158 64% 52%;
+    --warning: 38 92% 54%;
+    --danger: 0 72% 62%;
+    --info: 205 89% 63%;
+
+    /* Opportunity-score severity scale. */
+    --score-exceptional: 158 72% 50%;
+    --score-high: 109 58% 51%;
+    --score-promising: 40 92% 55%;
+    --score-moderate: 24 90% 60%;
+    --score-low: 220 9% 55%;
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: hsl(var(--accent) / 0.3);
+  }
+
+  /* Slim, unobtrusive scrollbars for a dense dashboard. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border-strong));
+    border-radius: 5px;
+    border: 2px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border-strong)) transparent;
+  }
+}
+
+/* Hide scrollbar for Firefox in modal/scroll containers */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Custom backdrop for modals (glass alternative) */
+  .modal-backdrop {
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  /* Text truncation utilities */
+  .truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Reduce motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
