@@ -51,6 +51,7 @@ describe("Auth flow (PH1B)", () => {
       organizationId: "org-a",
       passwordHash,
       isActive: true,
+      emailVerified: true,
     });
 
     const response = await loginPOST(makeLoginRequest({ email: "analyst@test.com", password: "hunter2-hunter2-hunter2" }));
@@ -78,6 +79,7 @@ describe("Auth flow (PH1B)", () => {
       organizationId: null,
       passwordHash,
       isActive: true,
+      emailVerified: true,
     });
 
     const response = await loginPOST(makeLoginRequest({ email: "analyst@test.com", password: "wrong-password" }));
@@ -104,6 +106,7 @@ describe("Auth flow (PH1B)", () => {
       organizationId: null,
       passwordHash: await hashPassword("hunter2-hunter2-hunter2"),
       isActive: false,
+      emailVerified: true,
     });
 
     const response = await loginPOST(makeLoginRequest({ email: "offboarded@test.com", password: "hunter2-hunter2-hunter2" }));
@@ -122,6 +125,7 @@ describe("Auth flow (PH1B)", () => {
       organizationId: null,
       passwordHash,
       isActive: true,
+      emailVerified: true,
     });
     const loginResponse = await loginPOST(makeLoginRequest({ email: "analyst@test.com", password: "hunter2-hunter2-hunter2" }));
     const cookieToken = (loginResponse.headers.get("set-cookie") ?? "")

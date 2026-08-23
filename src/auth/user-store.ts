@@ -26,6 +26,7 @@ export interface StoredUser {
   organizationId: string | null;
   passwordHash: string | null;
   isActive: boolean;
+  emailVerified: boolean;
 }
 
 export interface SessionRecord {
@@ -63,6 +64,7 @@ export async function findUserByEmail(email: string): Promise<StoredUser | null>
     organizationId: row.organizationId ?? null,
     passwordHash: row.passwordHash ?? null,
     isActive: row.isActive,
+    emailVerified: row.emailVerified,
   };
 }
 
@@ -84,6 +86,7 @@ export async function createUser(input: {
   passwordHash: string;
   role: UserRole;
   organizationId?: string | null;
+  emailVerified?: boolean;
 }): Promise<StoredUser> {
   const db = getDb();
   const id = `user_${randomBytes(12).toString("hex")}`;
@@ -97,6 +100,7 @@ export async function createUser(input: {
     organizationId: input.organizationId ?? null,
     passwordHash: input.passwordHash,
     isActive: true,
+    emailVerified: input.emailVerified ?? false,
   });
 
   return {
@@ -107,6 +111,7 @@ export async function createUser(input: {
     organizationId: input.organizationId ?? null,
     passwordHash: null, // never return credential material
     isActive: true,
+    emailVerified: input.emailVerified ?? false,
   };
 }
 
@@ -223,5 +228,6 @@ export async function ensureOwnerUser(): Promise<void> {
     role: "owner",
     passwordHash,
     organizationId: undefined,
+    emailVerified: true,
   });
 }

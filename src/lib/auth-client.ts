@@ -65,6 +65,10 @@ export interface LoginResult {
   ok: boolean;
   /** Present when ok=false - a generic, safe message for display */
   error?: string;
+  /** true when credentials were valid but the email is unverified */
+  needsVerification?: boolean;
+  /** The account email, returned only on the unverified path */
+  email?: string;
 }
 
 /**
@@ -80,6 +84,13 @@ export async function login(email: string, password: string): Promise<LoginResul
 
   if (response.ok) return { ok: true };
 
+  if (response.status === 403) {
+    const payload = await response.json().catch(() => null);
+    if (payload?.code === "EMAIL_NOT_VERIFIED") {
+      return { ok: false, needsVerification: true, error: payload.error, email: payload.email };
+    }
+    return { ok: false, error: "Sign-in is temporarily unavailable. Please try again." };
+  }
   if (response.status === 401 || response.status === 400) {
     return { ok: false, error: "Invalid email or password." };
   }
@@ -87,6 +98,76 @@ export async function login(email: string, password: string): Promise<LoginResul
     return { ok: false, error: "Too many attempts. Please try again later." };
   }
   return { ok: false, error: "Sign-in is temporarily unavailable. Please try again." };
+}
+
+export interface SignUpResult {
+  ok: boolean;
+  error?: string;
+  /** Non-production only: verification code when no email provider is configured */
+  devOnlyCode?: string;
+}
+
+/** POST /api/auth/signup - creates an unverified account and sends a code. */
+export async function signUp(input: {
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+}): Promise<SignUpResult> {
+  const response = await fetch("/api/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (response.ok && payload?.ok) {
+    return { ok: true, devOnlyCode: payload.devOnlyCode };
+  }
+  if (response.status === 429) {
+    return { ok: false, error: payload?.error ?? "Too many attempts. Please try again later." };
+  }
+  if (response.status >= 400 && response.status < 500) {
+    return { ok: false, error: payload?.error ?? "Please check your details and try again." };
+  }
+  return { ok: false, error: "Sign up is temporarily unavailable. Please try again." };
+}
+
+export interface VerifyEmailResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** POST /api/auth/verify-email - on success the session cookie is set. */
+export async function verifyEmail(email: string, code: string): Promise<VerifyEmailResult> {
+  const response = await fetch("/api/auth/verify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code }),
+  });
+  if (response.ok) return { ok: true };
+
+  const payload = await response.json().catch(() => null);
+  if (response.status === 429) {
+    return { ok: false, error: payload?.error ?? "Too many attempts. Please try again later." };
+  }
+  if (response.status >= 400 && response.status < 500) {
+    return { ok: false, error: payload?.error ?? "Invalid or expired code." };
+  }
+  return { ok: false, error: "Verification is temporarily unavailable. Please try again." };
+}
+
+/** POST /api/auth/resend-verification - uniform responses, no enumeration. */
+export async function resendVerification(email: string): Promise<VerifyEmailResult> {
+  const response = await fetch("/api/auth/resend-verification", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (response.ok) return { ok: true };
+
+  const payload = await response.json().catch(() => null);
+  return { ok: false, error: payload?.error ?? "Could not resend the code right now." };
 }
 
 /**

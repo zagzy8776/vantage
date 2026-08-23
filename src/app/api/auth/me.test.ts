@@ -60,6 +60,7 @@ describe("GET /api/auth/me (PH1C)", () => {
       organizationId: null,
       passwordHash: "$scrypt$secret-material",
       isActive: true,
+      emailVerified: true,
     });
 
     const response = await meGET(makeMeRequest(`session=${mintToken()}`));
@@ -135,6 +136,7 @@ describe("GET /api/auth/me (PH1C)", () => {
       organizationId: null,
       passwordHash: null,
       isActive: false,
+      emailVerified: true,
     });
 
     const response = await meGET(makeMeRequest(`session=${mintToken()}`));

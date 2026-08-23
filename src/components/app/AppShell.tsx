@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -47,9 +48,17 @@ function AuthErrorScreen({ onRetry }: { onRetry: () => void }) {
         <p className="text-xs text-subtle">
           VANTAGE could not confirm your sign-in status. Check your connection and try again.
         </p>
-        <Button size="sm" variant="secondary" onClick={onRetry}>
-          Retry
-        </Button>
+        <div className="flex items-center justify-center gap-2">
+          <Button size="sm" variant="secondary" onClick={onRetry}>
+            Retry
+          </Button>
+          <Link
+            href="/login"
+            className="inline-flex items-center justify-center h-8 px-3 rounded-md border border-border text-xs font-medium text-foreground hover:bg-surface-2 transition-colors"
+          >
+            Go to sign in
+          </Link>
+        </div>
       </div>
     </div>
   );

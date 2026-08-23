@@ -73,6 +73,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
     }
 
+    // Unverified self-service accounts must not receive a workspace session.
+    if (!user.emailVerified) {
+      return NextResponse.json(
+        {
+          error: "Please verify your email address before signing in.",
+          code: "EMAIL_NOT_VERIFIED",
+          email: user.email,
+        },
+        { status: 403 }
+      );
+    }
+
     const sessionId = randomBytes(16).toString("hex");
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
     const token = createSessionToken(

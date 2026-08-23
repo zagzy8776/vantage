@@ -747,11 +747,27 @@ export const users = pgTable(
     organizationId: text("organization_id"),
     passwordHash: text("password_hash"),
     isActive: boolean("is_active").notNull().default(true),
+    emailVerified: boolean("email_verified").notNull().default(false),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
     lastLoginAt: timestamp("last_login_at", { mode: "date" }),
   },
   (table) => [index("idx_users_email").on(table.email)],
+);
+
+export const emailVerifications = pgTable(
+  "email_verifications",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    /** HMAC-SHA256 of the 6-digit code - plaintext codes are never stored */
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    verifiedAt: timestamp("verified_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_email_verifications_user_id").on(table.userId)],
 );
 
 export const authSessions = pgTable(

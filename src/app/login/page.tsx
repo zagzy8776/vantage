@@ -1,12 +1,14 @@
 "use client";
 
 import React, { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import {
   fetchCurrentUser,
   login,
+  resendVerification,
   resolveSafeRedirect,
 } from "@/lib/auth-client";
 
@@ -19,6 +21,7 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
 
   // Already signed in? Skip the form entirely.
@@ -52,6 +55,9 @@ function LoginForm() {
     try {
       const result = await login(trimmedEmail, password);
       if (!result.ok) {
+        if (result.needsVerification && result.email) {
+          setUnverifiedEmail(result.email);
+        }
         setFormError(result.error ?? "Invalid email or password.");
         return;
       }
@@ -72,6 +78,44 @@ function LoginForm() {
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
         </svg>
+      </div>
+    );
+  }
+
+  const handleResendAndGo = async () => {
+    if (!unverifiedEmail) return;
+    setIsSubmitting(true);
+    try {
+      await resendVerification(unverifiedEmail);
+    } catch {
+      // The verify page offers its own resend - never block navigation here.
+    } finally {
+      setIsSubmitting(false);
+    }
+    router.push(`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`);
+  };
+
+  if (unverifiedEmail) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-sm font-bold text-foreground mb-1">Verify your email</h2>
+        <p className="text-xs text-subtle">
+          Your account is not verified yet. We can email you a fresh 6-digit code, then
+          you&apos;ll complete verification on the next screen.
+        </p>
+        <Button size="lg" isLoading={isSubmitting} onClick={() => void handleResendAndGo()} className="w-full">
+          Resend verification code
+        </Button>
+        <button
+          type="button"
+          onClick={() => {
+            setUnverifiedEmail(null);
+            setFormError(null);
+          }}
+          className="w-full text-[11px] text-subtle hover:text-foreground transition-colors"
+        >
+          Back to sign in
+        </button>
       </div>
     );
   }
@@ -127,6 +171,17 @@ export default function LoginPage() {
         </div>
 
         <div className="border border-border rounded-lg bg-surface p-6 shadow-sm">
+          {/* Sign In | Sign Up switcher */}
+          <div className="grid grid-cols-2 mb-5 border border-border rounded-md overflow-hidden text-xs font-mono uppercase tracking-wide">
+            <span className="py-2 text-center bg-accent/10 text-accent font-semibold">Sign In</span>
+            <Link
+              href="/signup"
+              className="py-2 text-center text-subtle hover:text-foreground hover:bg-surface-2/60 transition-colors"
+            >
+              Sign Up
+            </Link>
+          </div>
+
           <h2 className="text-sm font-bold text-foreground mb-1">Sign in to your workspace</h2>
           <p className="text-xs text-subtle mb-5">
             Access is restricted to authorized VANTAGE accounts.
