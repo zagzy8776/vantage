@@ -40,32 +40,35 @@ export async function canAccessSearchRun(searchRunId: string, auth: AuthContext)
   return false;
 }
 
+function tenantVisibilitySql(auth: AuthContext, ownerColumn: string, organizationColumn: string) {
+  if (auth.organizationId) {
+    return sql`${sql.raw(ownerColumn)} = ${auth.userId} OR ${sql.raw(organizationColumn)} = ${auth.organizationId}`;
+  }
+  return sql`${sql.raw(ownerColumn)} = ${auth.userId}`;
+}
+
 export async function canAccessBusiness(businessId: string, auth: AuthContext): Promise<boolean> {
+  const visibility = tenantVisibilitySql(auth, "sra.owner_id", "sra.organization_id");
   const result = await getDb().execute(sql`
     SELECT 1
     FROM search_run_businesses srb
     INNER JOIN search_run_access sra ON sra.search_run_id = srb.search_run_id
     WHERE srb.business_id = ${businessId}
-      AND (
-        sra.owner_id = ${auth.userId}
-        OR (${auth.organizationId ?? null} IS NOT NULL AND sra.organization_id = ${auth.organizationId ?? null})
-      )
+      AND (${visibility})
     LIMIT 1
   `);
   return result.rows.length > 0;
 }
 
 export async function canAccessLead(leadId: string, auth: AuthContext): Promise<boolean> {
+  const visibility = tenantVisibilitySql(auth, "sra.owner_id", "sra.organization_id");
   const result = await getDb().execute(sql`
     SELECT 1
     FROM leads l
     INNER JOIN search_run_businesses srb ON srb.business_id = l.business_id
     INNER JOIN search_run_access sra ON sra.search_run_id = srb.search_run_id
     WHERE l.id = ${leadId}
-      AND (
-        sra.owner_id = ${auth.userId}
-        OR (${auth.organizationId ?? null} IS NOT NULL AND sra.organization_id = ${auth.organizationId ?? null})
-      )
+      AND (${visibility})
     LIMIT 1
   `);
   return result.rows.length > 0;
