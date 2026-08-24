@@ -5,8 +5,9 @@
  * 6-digit verification code. No session is issued here - the account cannot
  * be used until POST /api/auth/verify-email succeeds.
  *
- * Responses are deliberately uniform for existing verified emails to prevent
- * user enumeration.
+ * In explicitly enabled VANTAGE_EMAIL_TEST_MODE, the code is returned for
+ * controlled testing without sending an email. This mode is opt-in and must
+ * never be enabled for a real customer-facing deployment.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -31,11 +32,15 @@ interface IssueOutcome {
   sent: boolean;
   configured: boolean;
   reason?: string;
-  /** Set only when no email provider is configured AND not production. */
-  devOnlyCode?: string;
+  /** Set only when an explicit test mode is enabled. */
+  testOnlyCode?: string;
 }
 
-/** Issue a code; persist only its hash; email the plaintext. */
+function isEmailTestModeEnabled(): boolean {
+  return process.env.VANTAGE_EMAIL_TEST_MODE === "true";
+}
+
+/** Issue a code; persist only its hash; email the plaintext unless test mode is enabled. */
 async function issueAndSendCode(userId: string, email: string): Promise<IssueOutcome> {
   const code = generateVerificationCode();
   await insertVerification({
@@ -44,15 +49,17 @@ async function issueAndSendCode(userId: string, email: string): Promise<IssueOut
     expiresAt: new Date(Date.now() + CODE_TTL_MS),
   });
 
+  if (isEmailTestModeEnabled()) {
+    return {
+      sent: false,
+      configured: false,
+      testOnlyCode: code,
+    };
+  }
+
   const result = await sendVerificationEmail(email, code);
   if (result.sent) {
     return { sent: true, configured: true };
-  }
-
-  if (!result.configured && process.env.NODE_ENV !== "production") {
-    // Local/dev convenience: no provider configured. The plaintext code is
-    // returned ONLY here - never in production, never persisted or logged.
-    return { sent: false, configured: false, devOnlyCode: code };
   }
 
   return {
@@ -63,7 +70,6 @@ async function issueAndSendCode(userId: string, email: string): Promise<IssueOut
 }
 
 function uniformOk(): NextResponse {
-  // Identical for all outcomes that reach this point - prevents enumeration.
   return NextResponse.json({ ok: true, message: "Check your email to continue." });
 }
 
@@ -91,13 +97,11 @@ export async function POST(request: NextRequest) {
     const existing = await findUserByEmail(email);
 
     if (existing?.emailVerified) {
-      // Uniform response - do not reveal that the account exists, do not send.
       return uniformOk();
     }
 
     let userId: string;
     if (existing && !existing.emailVerified) {
-      // Unverified duplicate: continue verifying the same account.
       userId = existing.id;
     } else {
       const created = await createUser({
@@ -111,7 +115,6 @@ export async function POST(request: NextRequest) {
       userId = created.id;
     }
 
-    // A still-valid pending code means one was already issued recently.
     const pending = await findLatestPendingVerification(userId);
     if (pending) {
       return uniformOk();
@@ -119,16 +122,17 @@ export async function POST(request: NextRequest) {
 
     const outcome = await issueAndSendCode(userId, email);
 
+    if (outcome.testOnlyCode) {
+      return NextResponse.json({
+        ok: true,
+        message: "Test verification code generated.",
+        testOnlyCode: outcome.testOnlyCode,
+      });
+    }
+
     if (!outcome.sent) {
-      if (!outcome.configured) {
-        return NextResponse.json({
-          ok: true,
-          message: "Check your email to continue.",
-          devOnlyCode: outcome.devOnlyCode,
-        });
-      }
       return NextResponse.json(
-        { error: outcome.reason ?? "Could not send verification email." },
+        { error: outcome.reason ?? "Could not send the verification email. Configure a VANTAGE sending domain before enabling customer email verification." },
         { status: 503 }
       );
     }
