@@ -1,5 +1,4 @@
-import { and, eq, or, isNull } from "drizzle-orm";
-import { pgTable, text, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { eq, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import type { AuthContext } from "@/auth/types";
 
@@ -44,15 +43,19 @@ export async function getSearchRunOwner(searchRunId: string) {
 }
 
 /**
- * Tenant-safe access check. Legacy ownerless runs are deliberately restricted
- * to platform owners/admins until explicitly associated with an account.
+ * A platform owner is the only account without an organization and may inspect
+ * legacy/unowned data. A normal organization owner is still tenant-scoped.
  */
+function isPlatformOwner(auth: AuthContext): boolean {
+  return auth.role === "owner" && !auth.organizationId;
+}
+
 export async function canAccessSearchRun(searchRunId: string, auth: AuthContext): Promise<boolean> {
   const access = await getSearchRunOwner(searchRunId);
-  if (!access) return auth.role === "owner" || auth.role === "admin";
+  if (!access) return isPlatformOwner(auth);
   if (access.ownerId === auth.userId) return true;
   if (access.organizationId && access.organizationId === auth.organizationId) {
     return ["owner", "admin", "analyst", "reviewer", "client"].includes(auth.role);
   }
-  return auth.role === "owner";
+  return isPlatformOwner(auth);
 }
