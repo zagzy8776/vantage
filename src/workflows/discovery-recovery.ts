@@ -27,10 +27,9 @@ async function executeDiscoveryStep(
   try {
     const { discoverBusinesses } = await import("@/lib/discover/service");
 
-    // Ask providers for a wider candidate window. The customer-facing result is
-    // reduced to unseen businesses in scopeDiscoveryResult, which makes repeat
-    // scans useful instead of returning the same first page forever.
-    const candidateLimit = Math.min(250, Math.max(query.limit, query.limit * 3));
+    // Provider search APIs cap a single request at 50 results. Keep the
+    // customer-facing limit while avoiding invalid provider requests.
+    const candidateLimit = Math.min(50, Math.max(1, query.limit));
     const rawResult = await discoverBusinesses({ ...query, limit: candidateLimit }, runId);
     const scopedResult = await scopeDiscoveryResult(runId, query.limit, rawResult as Record<string, unknown>);
 
