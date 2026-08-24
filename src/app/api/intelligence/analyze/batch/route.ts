@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeLeads, type StoredLeadIntelligence } from "@/services/intelligence/lead-analysis";
+import { analyzeLeads } from "@/services/intelligence/lead-analysis";
+import type { StoredLeadIntelligence } from "@/services/intelligence/types";
 import { requireRole } from "@/auth/middleware";
 import { canAccessLead } from "@/services/search-runs/access";
 
