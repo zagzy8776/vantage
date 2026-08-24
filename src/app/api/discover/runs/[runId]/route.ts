@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSearchRun } from "@/services/search-runs/service";
+import { canAccessSearchRun } from "@/services/search-runs/access";
 import { unstable_noStore } from "next/cache";
 import { requireAuth } from "@/auth/middleware";
 
@@ -25,6 +26,11 @@ export async function GET(request: NextRequest, context: { params: { runId: stri
     unstable_noStore();
     const run = await getSearchRun(context.params.runId);
     if (!run) return NextResponse.json({ error: "Search run not found." }, { status: 404 });
+
+    if (!(await canAccessSearchRun(run.id, auth))) {
+      // Avoid revealing whether another tenant's run exists.
+      return NextResponse.json({ error: "Search run not found." }, { status: 404 });
+    }
 
     // Customer-facing state contains outcomes and progress only. Provider
     // names, diagnostics, fallback information, source internals and cost data
