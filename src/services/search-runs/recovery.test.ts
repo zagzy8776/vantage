@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listRecoverableSearchRuns, claimSearchRunForRecovery, discoverBusinesses } = vi.hoisted(() => ({
+const { listRecoverableSearchRuns, claimSearchRunForRecovery, start } = vi.hoisted(() => ({
   listRecoverableSearchRuns: vi.fn(),
   claimSearchRunForRecovery: vi.fn(),
-  discoverBusinesses: vi.fn(),
+  start: vi.fn(),
 }));
 
 vi.mock("./service", () => ({
@@ -23,7 +23,10 @@ vi.mock("./service", () => ({
   }),
 }));
 
-vi.mock("@/lib/discover/service", () => ({ discoverBusinesses }));
+vi.mock("workflow/api", () => ({ start }));
+vi.mock("@/workflows/discovery-recovery", () => ({
+  discoveryRecoveryWorkflow: vi.fn(),
+}));
 
 import { recoverOrphanedSearchRuns } from "./recovery";
 
@@ -44,23 +47,25 @@ function makeRun(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  start.mockResolvedValue({ runId: "wf_1" });
 });
 
 describe("search run recovery (cron sweep)", () => {
-  it("recovers an orphaned queued run through the discovery engine", async () => {
+  it("claims an orphaned run and starts a durable workflow", async () => {
     listRecoverableSearchRuns.mockResolvedValue([makeRun()]);
     claimSearchRunForRecovery.mockResolvedValue(true);
-    discoverBusinesses.mockResolvedValue({ results: [] });
 
     const report = await recoverOrphanedSearchRuns({ workerId: "w1", maxRuns: 2 });
 
     expect(report.recovered).toEqual(["run_1"]);
     expect(report.failed).toEqual([]);
     expect(claimSearchRunForRecovery).toHaveBeenCalledWith("run_1", "w1", expect.any(Number));
-    expect(discoverBusinesses).toHaveBeenCalledTimes(1);
-    const [query, runId] = discoverBusinesses.mock.calls[0];
-    expect(query.category).toBe("Dental clinics");
-    expect(runId).toBe("run_1");
+    expect(start).toHaveBeenCalledTimes(1);
+    const [workflow, args] = start.mock.calls[0];
+    expect(workflow).toBeDefined();
+    expect(args[0].category).toBe("Dental clinics");
+    expect(args[1]).toBe("run_1");
+    expect(args[2]).toBe("w1");
   });
 
   it("never recovers an already-terminal Search Run", async () => {
@@ -70,7 +75,7 @@ describe("search run recovery (cron sweep)", () => {
 
     expect(report.skippedAlreadyTerminal).toEqual(["run_1"]);
     expect(claimSearchRunForRecovery).not.toHaveBeenCalled();
-    expect(discoverBusinesses).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
   });
 
   it("skips a run whose lock is still held by a live worker", async () => {
@@ -80,34 +85,31 @@ describe("search run recovery (cron sweep)", () => {
     const report = await recoverOrphanedSearchRuns({ workerId: "w1" });
 
     expect(report.recovered).toEqual([]);
-    expect(discoverBusinesses).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
   });
 
-  it("repeated sweeps do not re-process runs that reached a terminal state", async () => {
-    // First sweep recovers the run.
+  it("repeated sweeps do not start duplicate workflows after the first claim", async () => {
     listRecoverableSearchRuns.mockResolvedValueOnce([makeRun()]);
     claimSearchRunForRecovery.mockResolvedValueOnce(true);
-    discoverBusinesses.mockResolvedValue({ results: [] });
     await recoverOrphanedSearchRuns({ workerId: "w1" });
-    expect(discoverBusinesses).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledTimes(1);
 
-    // Second sweep: the run is now terminal so it is no longer a candidate.
     listRecoverableSearchRuns.mockResolvedValue([]);
     const second = await recoverOrphanedSearchRuns({ workerId: "w2" });
     expect(second.examined).toBe(0);
     expect(second.recovered).toEqual([]);
-    expect(discoverBusinesses).toHaveBeenCalledTimes(1); // unchanged - no duplicates
+    expect(start).toHaveBeenCalledTimes(1);
   });
 
-  it("records provider failures without throwing", async () => {
+  it("records workflow scheduling failures without throwing", async () => {
     listRecoverableSearchRuns.mockResolvedValue([makeRun()]);
     claimSearchRunForRecovery.mockResolvedValue(true);
-    discoverBusinesses.mockRejectedValue(new Error("provider_error: Tavily unavailable"));
+    start.mockRejectedValue(new Error("workflow unavailable"));
 
     const report = await recoverOrphanedSearchRuns({ workerId: "w1" });
 
     expect(report.failed).toEqual(["run_1"]);
-    expect(report.errors[0]).toContain("Tavily");
+    expect(report.errors[0]).toContain("workflow unavailable");
   });
 
   it("bounds work per invocation", async () => {
