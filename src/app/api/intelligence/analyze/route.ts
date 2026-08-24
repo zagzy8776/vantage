@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeLead } from "@/services/intelligence/lead-analysis";
 import { requireRole } from "@/auth/middleware";
+import { canAccessLead } from "@/services/search-runs/access";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  // AI analysis triggers paid provider calls - analyst access or higher required
   const auth = await requireRole(request, ["owner", "admin", "analyst"]);
   if (auth instanceof NextResponse) return auth;
 
@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null);
     const leadId = typeof body?.leadId === "string" ? body.leadId.trim() : "";
     if (!leadId) return NextResponse.json({ error: "leadId is required." }, { status: 400 });
+    if (!(await canAccessLead(leadId, auth))) return NextResponse.json({ error: "Lead not found." }, { status: 404 });
     return NextResponse.json({ intelligence: await analyzeLead(leadId) }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected intelligence analysis error.";
