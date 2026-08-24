@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { desc } from "drizzle-orm";
+import { desc, eq, or } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { searchRuns } from "@/lib/db/schema";
+import { searchRunAccess } from "@/services/search-runs/access";
 import { requireAuth } from "@/auth/middleware";
 
 export const dynamic = "force-dynamic";
@@ -9,9 +10,9 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/discover/runs
  *
- * Returns persisted discovery history. Results are deliberately returned from
- * the database rather than reconstructed from browser state, so leaving the
- * Discover screen never destroys a user's previous scan.
+ * Returns persisted discovery history scoped to the authenticated user's
+ * account/organization. Legacy ownerless runs are visible only to platform
+ * owners so old data cannot leak across customer accounts.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
@@ -20,6 +21,13 @@ export async function GET(request: NextRequest) {
   try {
     const rawLimit = Number(new URL(request.url).searchParams.get("limit") ?? 20);
     const limit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 20, 50));
+
+    const visibility = auth.role === "owner"
+      ? undefined
+      : or(
+          eq(searchRunAccess.ownerId, auth.userId),
+          auth.organizationId ? eq(searchRunAccess.organizationId, auth.organizationId) : undefined,
+        );
 
     const runs = await getDb()
       .select({
@@ -40,6 +48,8 @@ export async function GET(request: NextRequest) {
         result: searchRuns.result,
       })
       .from(searchRuns)
+      .leftJoin(searchRunAccess, eq(searchRunAccess.searchRunId, searchRuns.id))
+      .where(visibility)
       .orderBy(desc(searchRuns.createdAt))
       .limit(limit);
 
