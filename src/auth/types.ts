@@ -4,59 +4,41 @@
  * User accounts, roles, and resource ownership/access control.
  */
 
-/**
- * User roles in the VANTAGE system
- */
-export type UserRole = 
-  | "owner"      // Full system access, can manage users and billing
-  | "admin"      // Can manage investigations and team members
-  | "analyst"    // Can create and manage investigations
-  | "researcher" // Can submit evidence to marketplace tasks
-  | "reviewer"   // Can review marketplace submissions
-  | "client";    // Read-only access to assigned investigations
+export type UserRole =
+  | "owner"
+  | "admin"
+  | "analyst"
+  | "researcher"
+  | "reviewer"
+  | "client";
 
-/**
- * User account
- */
 export interface User {
   id: string;
   email: string;
   name: string;
   role: UserRole;
-  organizationId?: string; // Optional: for team/enterprise accounts
+  organizationId?: string;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt?: Date;
   isActive: boolean;
 }
 
-/**
- * Resource ownership - applied to investigations, plans, reports, etc.
- */
 export interface ResourceOwnership {
-  ownerId: string; // User who owns the resource
-  organizationId?: string; // Optional team ownership
+  ownerId: string;
+  organizationId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-/**
- * Permission levels for resources
- */
 export type Permission = "read" | "write" | "admin" | "none";
 
-/**
- * Access control result
- */
 export interface AccessResult {
   allowed: boolean;
   permission: Permission;
   reason?: string;
 }
 
-/**
- * Investigation access control
- */
 export interface InvestigationAccess {
   investigationId: string;
   ownerId: string;
@@ -69,9 +51,6 @@ export interface InvestigationAccess {
   updatedAt: Date;
 }
 
-/**
- * Session data
- */
 export interface Session {
   sessionId?: string;
   userId: string;
@@ -83,11 +62,13 @@ export interface Session {
 }
 
 /**
- * Auth context for API requests
+ * Auth context for API requests.
+ * isAnonymous is true only for the temporary public/pilot workspace mode.
  */
 export interface AuthContext {
   userId: string;
   email: string;
   role: UserRole;
   organizationId?: string;
+  isAnonymous?: boolean;
 }
