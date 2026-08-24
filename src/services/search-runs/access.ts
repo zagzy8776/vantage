@@ -1,26 +1,13 @@
-import { eq, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
+import { searchRunAccess } from "@/lib/db/schema";
 import type { AuthContext } from "@/auth/types";
 
 /**
- * Search runs predate the production tenant model, so ownership is kept in a
- * small side table instead of rewriting the canonical search_runs schema.
- * ownerId is nullable for legacy runs created before tenant isolation.
+ * Search run ownership lives in the canonical search_run_access table. The
+ * table is defined in the DB schema/migrations so deployments and runtime use
+ * the same Drizzle definition.
  */
-export const searchRunAccess = pgTable(
-  "search_run_access",
-  {
-    searchRunId: text("search_run_id").primaryKey(),
-    ownerId: text("owner_id"),
-    organizationId: text("organization_id"),
-    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
-  },
-  (table) => ({
-    ownerIndex: index("search_run_access_owner_idx").on(table.ownerId),
-    organizationIndex: index("search_run_access_org_idx").on(table.organizationId),
-    ownerRunUnique: uniqueIndex("search_run_access_owner_run_unique").on(table.ownerId, table.searchRunId),
-  })
-);
 
 export async function recordSearchRunOwner(input: {
   searchRunId: string;
