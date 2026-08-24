@@ -38,6 +38,13 @@ function ClaimGroup({ title, type, items }: { title: string; type: StoredLeadInt
   return <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">{title}</div>{claims.length ? <div className="space-y-2">{claims.map((item, index) => <div key={`${item.source}-${index}`} className="border border-border rounded-md p-3"><p className="text-sm text-subtle">{item.statement}</p>{item.evidenceIds.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{item.evidenceIds.map((id) => <a key={id} href={`#evidence-${id}`} className="text-[10px] font-mono text-accent hover:underline">Evidence {id}</a>)}</div>}</div>)}</div> : <p className="text-sm text-subtle">None.</p>}</div>;
 }
 
+function validationMessage(selected: StoredLeadIntelligence) {
+  if (selected.validationStatus === "supported") return "Findings are supported by the available research evidence.";
+  if (selected.validationStatus === "rejected") return "This analysis needs more evidence before its findings can be trusted.";
+  if (selected.validationStatus === "requires_review") return "Some findings need additional evidence review.";
+  return "This is an earlier analysis and may need fresh validation.";
+}
+
 export function LeadIntelligencePanel({ leadId, initialScore, initialIntelligence, history }: LeadIntelligencePanelProps) {
   const [intelligence, setIntelligence] = useState(initialIntelligence);
   const [historyItems, setHistoryItems] = useState(history);
@@ -66,16 +73,21 @@ export function LeadIntelligencePanel({ leadId, initialScore, initialIntelligenc
   }
 
   return (
-    <Card title="AI Intelligence" subtitle="Evidence-based interpretation. AI score remains separate from the initial score." headerAction={<Button size="sm" variant="secondary" isLoading={isLoading} onClick={analyze}>{intelligence ? "Re-analyze" : "Analyze with AI"}</Button>}>
+    <Card title="VANTAGE Intelligence" subtitle="Evidence-grounded interpretation. The technical research stack stays behind the product.">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <p className="text-xs text-subtle">Transparent reasoning with confidence and evidence links.</p>
+        <Button size="sm" variant="secondary" isLoading={isLoading} onClick={analyze}>{intelligence ? "Re-analyze" : "Analyze"}</Button>
+      </div>
       {!selected ? (
-        <div className="space-y-2"><p className="text-sm text-subtle">No AI interpretation has been run for this lead.</p>{error && <p className="text-xs text-danger">{error}</p>}</div>
+        <div className="space-y-2"><p className="text-sm text-subtle">No intelligence has been generated for this business yet.</p>{error && <p className="text-xs text-danger">{error}</p>}</div>
       ) : (
-          <div className="space-y-6">
-          <div className={`border rounded-md p-3 ${selected.validationStatus === "supported" ? "border-success/40 bg-success/5" : selected.validationStatus === "rejected" ? "border-danger/40 bg-danger/5" : "border-warning/40 bg-warning/5"}`}><div className="text-[10px] uppercase font-mono">AI validation</div><p className="text-sm font-semibold mt-1">{selected.validationStatus === "supported" ? "AI validation: Supported" : selected.validationStatus === "rejected" ? "AI output rejected" : "⚠ AI output requires evidence review"}</p>{selected.validationIssues.length > 0 && <ul className="mt-2 space-y-1 text-xs text-subtle">{selected.validationIssues.map((issue, index) => <li key={`${issue.type}-${index}`}>{issue.type}: {issue.reason}</li>)}</ul>}</div>
+        <div className="space-y-6">
+          <div className={`border rounded-md p-3 ${selected.validationStatus === "supported" ? "border-success/40 bg-success/5" : selected.validationStatus === "rejected" ? "border-danger/40 bg-danger/5" : "border-warning/40 bg-warning/5"}`}><div className="text-[10px] uppercase font-mono">Research confidence</div><p className="text-sm font-semibold mt-1">{validationMessage(selected)}</p><p className="mt-1 text-xs text-subtle">Confidence {selected.confidence}%</p></div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="border border-border rounded-lg p-3"><div className="text-[10px] text-subtle uppercase font-mono">AI opportunity</div><div className="text-3xl font-mono font-extrabold mt-1">{selected.opportunityScore}<span className="text-sm text-subtle"> / 100</span></div></div>
-            <div className={`border rounded-lg p-3 ${levelStyles[selected.opportunityLevel]}`}><div className="text-[10px] uppercase font-mono opacity-80">AI level</div><div className="text-xl font-mono font-extrabold mt-2">{levelLabels[selected.opportunityLevel]}</div></div>
-            <div className="border border-border rounded-lg p-3"><div className="text-[10px] text-subtle uppercase font-mono">Initial score</div><div className="text-3xl font-mono font-extrabold mt-1">{initialScore}<span className="text-sm text-subtle"> / 100</span></div></div>
+            <div className="border border-border rounded-lg p-3"><div className="text-[10px] text-subtle uppercase font-mono">Opportunity signal</div><div className="text-3xl font-mono font-extrabold mt-1">{selected.opportunityScore}<span className="text-sm text-subtle"> / 100</span></div></div>
+            <div className={`border rounded-lg p-3 ${levelStyles[selected.opportunityLevel]}`}><div className="text-[10px] uppercase font-mono opacity-80">Priority</div><div className="text-xl font-mono font-extrabold mt-2">{levelLabels[selected.opportunityLevel]}</div></div>
+            <div className="border border-border rounded-lg p-3"><div className="text-[10px] text-subtle uppercase font-mono">Initial signal</div><div className="text-3xl font-mono font-extrabold mt-1">{initialScore}<span className="text-sm text-subtle"> / 100</span></div></div>
           </div>
 
           <div><div className="text-[10px] text-subtle uppercase font-mono mb-1">Business summary</div><p className="text-sm leading-6">{selected.businessSummary}</p></div>
@@ -83,18 +95,19 @@ export function LeadIntelligencePanel({ leadId, initialScore, initialIntelligenc
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">Strengths</div><List items={selected.strengths} /></div>
             <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">Weaknesses</div><List items={selected.weaknesses} /></div>
-          <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">Supported opportunities</div><List items={selected.opportunities} /></div>
+            <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">Supported opportunities</div><List items={selected.opportunities} /></div>
             <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">Risks / uncertainty</div><List items={selected.risks} /></div>
           </div>
 
-          <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">Recommended services</div><List items={selected.recommendedServices} empty="No specific service recommendation is supported by the available evidence." /></div>
-          <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">Unknowns</div><List items={selected.unknowns} empty="No explicit unknowns recorded." /></div>
-          <div><div className="text-[10px] text-subtle uppercase font-mono mb-1">Reasoning</div><p className="text-sm text-subtle leading-6">{selected.reasoning}</p></div>
+          <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">Recommended next step</div><List items={selected.recommendedServices} empty="No specific action is supported by the available evidence yet." /></div>
+          <div><div className="text-[10px] text-subtle uppercase font-mono mb-2">Still unknown</div><List items={selected.unknowns} empty="No explicit unknowns recorded." /></div>
+          <div><div className="text-[10px] text-subtle uppercase font-mono mb-1">Why VANTAGE says this</div><p className="text-sm text-subtle leading-6">{selected.reasoning}</p></div>
 
-          <div><div className="flex items-center justify-between gap-3 mb-3"><div className="text-[10px] text-subtle uppercase font-mono">Evidence claims</div><div className="text-xs text-subtle">Confidence {selected.confidence}%</div></div><div className="space-y-4"><ClaimGroup title="Supported facts" type="fact" items={selected.evidence} /><ClaimGroup title="Derived observations" type="derived" items={selected.evidence} /><ClaimGroup title="Inferences" type="inference" items={selected.evidence} /></div></div>
+          {selected.evidence.length > 0 && <div><div className="flex items-center justify-between gap-3 mb-3"><div className="text-[10px] text-subtle uppercase font-mono">Evidence behind the conclusion</div><div className="text-xs text-subtle">Confidence {selected.confidence}%</div></div><div className="space-y-4"><ClaimGroup title="Observed facts" type="fact" items={selected.evidence} /><ClaimGroup title="Derived observations" type="derived" items={selected.evidence} /><ClaimGroup title="Cautious inferences" type="inference" items={selected.evidence} /></div></div>}
+          {selected.evidence.length === 0 && <div className="border border-border rounded-md p-3 text-sm text-subtle">No enrichment evidence was available for this analysis. The summary is based only on the business context and should be treated as preliminary.</div>}
 
-          <div className="flex items-center justify-between gap-3 flex-wrap border-t border-border pt-3"><div className="text-xs text-subtle">Analyzed by <span className="font-mono text-foreground">{selected.provider}</span>{selected.fallbackUsed && <span className="ml-2 text-warning">AI fallback used</span>}</div><div className="text-xs text-subtle">{formatDate(selected.createdAt)} · confidence {selected.confidence}%</div></div>
-          {historyItems.length > 1 && <label className="block text-xs text-subtle">Historical analyses<select className="mt-1 block w-full sm:w-auto bg-surface border border-border rounded px-2 py-1 text-xs text-foreground" value={selectedHistoryId} onChange={(event) => setSelectedHistoryId(event.target.value)}>{historyItems.map((item) => <option key={item.id} value={item.id}>{formatDate(item.createdAt)} · {item.provider} · {item.opportunityScore}/100</option>)}</select></label>}
+          <div className="flex items-center justify-between gap-3 flex-wrap border-t border-border pt-3"><div className="text-xs text-subtle">VANTAGE Intelligence</div><div className="text-xs text-subtle">{formatDate(selected.createdAt)} · confidence {selected.confidence}%</div></div>
+          {historyItems.length > 1 && <label className="block text-xs text-subtle">Previous analyses<select className="mt-1 block w-full sm:w-auto bg-surface border border-border rounded px-2 py-1 text-xs text-foreground" value={selectedHistoryId} onChange={(event) => setSelectedHistoryId(event.target.value)}>{historyItems.map((item) => <option key={item.id} value={item.id}>{formatDate(item.createdAt)} · {item.opportunityScore}/100</option>)}</select></label>}
           {error && <p className="text-xs text-danger">{error}</p>}
         </div>
       )}
