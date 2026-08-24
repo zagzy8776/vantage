@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { investigationAccess, investigationBusinesses, investigationSearchRuns, investigationShares, investigations } from "@/lib/db/schema";
 import type { InvestigationStatus, InvestigationSummary } from "./types";
@@ -13,8 +13,7 @@ export async function listScopedInvestigations(auth: AuthContext, params: {
   const page = Math.max(1, params.page);
   const pageSize = Math.min(100, Math.max(1, params.pageSize));
   const search = params.search?.trim();
-
-  const baseFilters = [
+  const filters = [
     params.status ? eq(investigations.status, params.status) : undefined,
     search ? or(
       ilike(investigations.title, `%${search}%`),
@@ -24,11 +23,11 @@ export async function listScopedInvestigations(auth: AuthContext, params: {
     ) : undefined,
   ].filter((value): value is NonNullable<typeof value> => Boolean(value));
 
-  const accessFilter = or(
-    eq(investigationAccess.ownerId, auth.userId),
-    auth.organizationId ? eq(investigationAccess.organizationId, auth.organizationId) : undefined,
-    eq(investigationShares.userId, auth.userId),
-  );
+  const visibility = sql`(
+    ${investigationAccess.ownerId} = ${auth.userId}
+    OR ${auth.organizationId ? sql`${investigationAccess.organizationId} = ${auth.organizationId}` : sql`false`}
+    OR (${investigationShares.userId} = ${auth.userId} AND ${investigationShares.permission} <> 'none')
+  )`;
 
   const rows = await getDb().selectDistinct({
     id: investigations.id,
@@ -44,12 +43,11 @@ export async function listScopedInvestigations(auth: AuthContext, params: {
   }).from(investigations)
     .innerJoin(investigationAccess, eq(investigationAccess.investigationId, investigations.id))
     .leftJoin(investigationShares, eq(investigationShares.investigationAccessId, investigationAccess.id))
-    .where(and(...baseFilters, accessFilter, sql`(${investigationAccess.ownerId} = ${auth.userId} OR ${investigationShares.userId} = ${auth.userId} AND ${investigationShares.permission} <> 'none' OR ${auth.organizationId ? sql`${investigationAccess.organizationId} = ${auth.organizationId}` : sql`false`})`))
+    .where(and(...filters, visibility))
     .orderBy(desc(investigations.createdAt));
 
   const total = rows.length;
   const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
-
   const items = await Promise.all(pageRows.map(async (item) => {
     const [businessCountResult, searchRunCountResult] = await Promise.all([
       getDb().select({ count: count() }).from(investigationBusinesses).where(eq(investigationBusinesses.investigationId, item.id)),
