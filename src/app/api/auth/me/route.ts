@@ -4,16 +4,25 @@ import { findUserByEmail } from "@/auth/user-store";
 
 export const dynamic = "force-dynamic";
 
-/**
- * GET /api/auth/me
- *
- * Returns the safe identity of the currently authenticated user so the
- * frontend can render auth state without duplicating token logic.
- * Only non-sensitive fields are exposed - never credential material.
- */
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
+
+  if (auth.isAnonymous) {
+    return NextResponse.json({
+      user: {
+        id: auth.userId,
+        email: undefined,
+        name: "Guest workspace",
+        role: auth.role,
+        organizationId: undefined,
+        anonymous: true,
+      },
+    }, {
+      status: 200,
+      headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+    });
+  }
 
   try {
     const record = await findUserByEmail(auth.email);
@@ -28,10 +37,13 @@ export async function GET(request: NextRequest) {
         name: record.name,
         role: record.role,
         organizationId: record.organizationId ?? undefined,
+        anonymous: false,
       },
+    }, {
+      status: 200,
+      headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
     });
   } catch {
-    // Fail closed - cannot confirm the account, treat as unauthenticated
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 }
