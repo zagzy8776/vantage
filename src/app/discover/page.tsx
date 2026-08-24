@@ -131,6 +131,15 @@ export default function DiscoverPage() {
       rememberRun(runId);
       setWorkflowStage(stageLabel(current.stages) ?? (TERMINAL.includes(current.status) ? "Complete" : "Queued for research worker"));
 
+      // Persisted scans may contain useful results before the overall workflow
+      // becomes terminal. Surface them immediately instead of hiding everything
+      // behind a full-page spinner for several minutes.
+      const liveResults = runToLeads(current);
+      if (liveResults.length > 0) {
+        setResults(liveResults);
+        setStillRunningNotice(!TERMINAL.includes(current.status));
+      }
+
       if (TERMINAL.includes(current.status)) break;
       if (!poll) break;
       if (Date.now() - started >= 15 * 60_000) break;
@@ -212,16 +221,23 @@ export default function DiscoverPage() {
       if (!initial?.runId) throw new Error("Discovery did not return a search run ID.");
 
       rememberRun(initial.runId);
-      const run = await loadRun(initial.runId, { poll: true });
+      const run = await loadRun(initial.runId, { poll: false });
+
+      // The request is complete once the run is safely queued. Research itself
+      // continues independently; users should be able to leave the page and
+      // return to the persisted scan rather than stare at a blocking spinner.
+      setIsLoading(false);
       if (run && !TERMINAL.includes(run.status)) {
         setStillRunningNotice(true);
-        setMessage("Research is still running. You can leave this page; the scan is saved and will appear here when you return.");
+        setMessage("Research is running. You can leave this page; the scan is saved and will continue in the background.");
+        void loadRun(initial.runId, { poll: true }).catch((err) => {
+          setMessage(err instanceof Error ? err.message : "Research is still running. Check Your scans for the latest state.");
+        });
       } else {
         setMessage("New scan saved. This result is independent from your previous scans.");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Discovery failed.");
-    } finally {
       setIsLoading(false);
     }
   };
@@ -339,42 +355,37 @@ export default function DiscoverPage() {
 
           {isLoading ? (
             <div className="space-y-3">
-              <LoadingState message={workflowStage ?? "Searching..."} rows={5} />
-              {stillRunningNotice && (
-                <div className="border border-info/40 bg-info/5 rounded-lg p-4">
-                  <p className="text-sm font-semibold">Research is still running.</p>
-                  <p className="text-xs text-subtle mt-1">You can leave this page. The scan is persisted and can be reopened from Your scans.</p>
-                </div>
-              )}
+              <LoadingState message={workflowStage ?? "Starting search..."} rows={5} />
             </div>
           ) : error ? (
             <div className="border border-danger/40 bg-danger/5 rounded-lg p-4 text-sm">{error}</div>
           ) : results.length === 0 ? (
-            <EmptyState title="No results in this scan" description="Run a new scan or select another saved scan above." />
+            <EmptyState title={stillRunningNotice ? "Research is still running" : "No results in this scan"} description={stillRunningNotice ? "VANTAGE is continuing the saved scan. You can leave this page and return to it from Your scans." : "Run a new scan or select another saved scan above."} />
           ) : (
             <section className="space-y-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
                   <h2 className="text-sm font-semibold uppercase font-mono">Saved results</h2>
-                  <p className="text-xs text-subtle">These results come from the selected persisted scan.</p>
+                  {stillRunningNotice && <p className="text-xs text-subtle mt-1">Showing results already discovered while the scan continues.</p>}
                 </div>
-                <Button variant="secondary" size="sm" onClick={handleAnalyzeSelected} isLoading={batchLoading} disabled={!selectedLeads.length}>
-                  Analyze Selected ({selectedLeads.length})
+                <Button variant="secondary" size="sm" onClick={handleAnalyzeSelected} disabled={!selectedLeads.length || batchLoading}>
+                  {batchLoading ? "Analyzing..." : `Analyze selected (${selectedLeads.length})`}
                 </Button>
               </div>
-              {message && <div className="text-xs text-subtle font-mono">{message}</div>}
-              <div className="space-y-3">
+              <div className="grid gap-3">
                 {results.map((lead) => (
                   <LeadCard
                     key={lead.id}
                     lead={lead}
                     selected={selectedIds.includes(lead.id)}
-                    onSelectedChange={(selected) => setSelectedIds((current) => selected ? [...current, lead.id] : current.filter((id) => id !== lead.id))}
+                    onSelect={(selected) => setSelectedIds((previous) => selected ? [...previous, lead.id] : previous.filter((id) => id !== lead.id))}
                   />
                 ))}
               </div>
             </section>
           )}
+
+          {message && <div className="border border-info/40 bg-info/5 rounded-lg p-3 text-xs text-subtle">{message}</div>}
         </div>
       </div>
     </div>
