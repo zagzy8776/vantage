@@ -26,8 +26,15 @@ type ResultBusiness = {
   street?: string; website?: string; phone?: string; rating?: number; reviewCount?: number;
 };
 
+type DiscoverSnapshot = {
+  runId: string;
+  results: Lead[];
+  savedAt: number;
+};
+
 const TERMINAL = ["completed", "completed_with_errors", "failed"];
 const LAST_RUN_STORAGE_KEY = "vantage:last-discover-run-id";
+const DISCOVER_SNAPSHOT_KEY = "vantage:discover-results-snapshot";
 
 function stageLabel(stages: Record<string, { status?: string }> | undefined) {
   const labels: Record<string, string> = {
@@ -75,10 +82,36 @@ export default function DiscoverPage() {
     [results, selectedIds],
   );
 
-  const clearRememberedRun = useCallback(() => {
+  const persistSnapshot = useCallback((runId: string, leads: Lead[]) => {
+    if (typeof window === "undefined" || !runId || !leads.length) return;
+    try {
+      const snapshot: DiscoverSnapshot = { runId, results: leads, savedAt: Date.now() };
+      window.sessionStorage.setItem(DISCOVER_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    } catch {}
+  }, []);
+
+  const restoreSnapshot = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const raw = window.sessionStorage.getItem(DISCOVER_SNAPSHOT_KEY);
+      if (!raw) return false;
+      const snapshot = JSON.parse(raw) as Partial<DiscoverSnapshot>;
+      if (!snapshot.runId || !Array.isArray(snapshot.results) || snapshot.results.length === 0) return false;
+      if (typeof snapshot.savedAt === "number" && Date.now() - snapshot.savedAt > 24 * 60 * 60 * 1000) return false;
+      setSelectedRunId(snapshot.runId);
+      setResults(snapshot.results as Lead[]);
+      setSelectedIds([]);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const clearRememberedRun = useCallback((clearSnapshot = true) => {
     if (typeof window === "undefined") return;
     try {
       window.sessionStorage.removeItem(LAST_RUN_STORAGE_KEY);
+      if (clearSnapshot) window.sessionStorage.removeItem(DISCOVER_SNAPSHOT_KEY);
       const url = new URL(window.location.href);
       if (url.searchParams.has("runId")) {
         url.searchParams.delete("runId");
@@ -105,10 +138,9 @@ export default function DiscoverPage() {
       const response = await fetch(`/api/discover/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       if (response.status === 404) {
-        clearRememberedRun();
-        setSelectedRunId(null);
-        setResults([]);
-        setSelectedIds([]);
+        // Do not immediately erase the user's saved result snapshot. A transient
+        // access/API failure should not destroy a scan they just viewed.
+        setSelectedRunId(runId);
         setStillRunningNotice(false);
         setWorkflowStage(null);
         return null;
@@ -121,6 +153,7 @@ export default function DiscoverPage() {
       const liveResults = runToLeads(current);
       if (liveResults.length > 0) {
         setResults(liveResults);
+        persistSnapshot(runId, liveResults);
         setStillRunningNotice(!TERMINAL.includes(current.status));
       }
       if (TERMINAL.includes(current.status)) break;
@@ -130,7 +163,9 @@ export default function DiscoverPage() {
     } while (true);
     if (!current) return null;
     if (current.status === "failed") throw new Error("Deep discovery failed. The saved run remains available in history.");
-    setResults(runToLeads(current));
+    const finalResults = runToLeads(current);
+    setResults(finalResults);
+    if (finalResults.length > 0) persistSnapshot(runId, finalResults);
     setSelectedIds([]);
     setStillRunningNotice(!TERMINAL.includes(current.status));
     setRuns((previous) => {
@@ -138,26 +173,33 @@ export default function DiscoverPage() {
       return [current!, ...withoutCurrent].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     });
     return current;
-  }, [clearRememberedRun, rememberRun]);
+  }, [persistSnapshot, rememberRun]);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setError(null);
     try {
+      const restored = restoreSnapshot();
       const response = await fetch("/api/discover/runs?limit=50", { cache: "no-store" });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(payload?.error ?? "Discovery history is unavailable.");
+      if (!response.ok) {
+        if (!restored) throw new Error(payload?.error ?? "Discovery history is unavailable.");
+        setHistoryLoading(false);
+        return;
+      }
       const history = (payload?.runs ?? []) as SearchRun[];
       setRuns(history);
 
       const queryRunId = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("runId") : null;
       const storedRunId = typeof window !== "undefined" ? window.sessionStorage.getItem(LAST_RUN_STORAGE_KEY) : null;
-      const preferredRunId = queryRunId ?? storedRunId;
+      const snapshotRunId = typeof window !== "undefined" ? (() => { try { const raw = window.sessionStorage.getItem(DISCOVER_SNAPSHOT_KEY); return raw ? (JSON.parse(raw) as DiscoverSnapshot).runId : null; } catch { return null; } })() : null;
+      const preferredRunId = queryRunId ?? storedRunId ?? snapshotRunId;
       const preferredRun = preferredRunId ? history.find((run) => run.id === preferredRunId) : undefined;
 
       // Only restore a scan explicitly present in this workspace. Never guess
       // by opening the latest scan; that can resurrect stale state after an
-      // account/workspace switch.
+      // account/workspace switch. A snapshot remains visible if the detailed
+      // run endpoint is temporarily unavailable.
       if (preferredRun) {
         const current = await loadRun(preferredRun.id, { poll: false });
         if (current && !TERMINAL.includes(current.status)) {
@@ -165,15 +207,15 @@ export default function DiscoverPage() {
           setMessage("This scan is still running. Your saved results will remain available while research continues.");
           void loadRun(preferredRun.id, { poll: true }).catch(() => undefined);
         }
-      } else if (preferredRunId) {
-        clearRememberedRun();
+      } else if (preferredRunId && !restored) {
+        clearRememberedRun(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Discovery history is unavailable.");
+      if (!restoreSnapshot()) setError(err instanceof Error ? err.message : "Discovery history is unavailable.");
     } finally {
       setHistoryLoading(false);
     }
-  }, [clearRememberedRun, loadRun]);
+  }, [clearRememberedRun, loadRun, restoreSnapshot]);
 
   useEffect(() => { void loadHistory(); }, [loadHistory]);
 
