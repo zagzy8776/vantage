@@ -115,8 +115,10 @@ export async function POST(request: NextRequest) {
       userId = created.id;
     }
 
+    // In test mode, always issue a fresh code so the tester can retry without
+    // being blocked by a previously pending verification record.
     const pending = await findLatestPendingVerification(userId);
-    if (pending) {
+    if (pending && !isEmailTestModeEnabled()) {
       return uniformOk();
     }
 
