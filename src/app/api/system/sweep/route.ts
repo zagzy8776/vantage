@@ -8,14 +8,15 @@ export const maxDuration = 60;
 /**
  * POST/GET /api/system/sweep
  *
- * Short-lived scheduler endpoint. It authenticates the external cron caller,
- * then delegates orphaned Search Runs to the recovery coordinator. The
- * coordinator atomically claims runs and starts durable Vercel Workflows;
- * provider calls never run directly inside this HTTP request.
+ * Short-lived safety-net scheduler. New searches start their durable workflow
+ * immediately; this endpoint only recovers runs orphaned by a failed deploy,
+ * runtime crash, or interrupted workflow start.
  */
 
 function isAuthorized(request: NextRequest): boolean {
-  const secret = process.env.SWEEP_SECRET?.trim();
+  // Vercel Cron automatically sends CRON_SECRET as `Authorization: Bearer ...`.
+  // SWEEP_SECRET remains supported for external schedulers/backwards compatibility.
+  const secret = process.env.CRON_SECRET?.trim() || process.env.SWEEP_SECRET?.trim();
   if (!secret) return false;
   const header = request.headers.get("authorization") ?? "";
   return header === `Bearer ${secret}`;
@@ -23,7 +24,7 @@ function isAuthorized(request: NextRequest): boolean {
 
 async function runSweep(request: NextRequest) {
   if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 403 });
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
   const maxRuns = Math.max(1, Math.min(Number(process.env.SWEEP_MAX_SEARCH_RUNS) || 2, 10));
