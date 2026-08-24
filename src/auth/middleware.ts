@@ -31,8 +31,10 @@ function getAnonymousWorkspaceId(request: NextRequest) {
 }
 
 /**
- * Public/pilot mode no longer impersonates the platform owner. Every browser
- * receives an isolated anonymous workspace identifier from src/middleware.ts.
+ * Public/pilot mode provides an isolated anonymous workspace only when the
+ * visitor does not already have a valid authenticated session. An
+ * authenticated session always wins so that signup/verification can hand the
+ * user directly into their new workspace even while public mode is enabled.
  */
 async function getPublicModeContext(request: NextRequest): Promise<AuthContext | null> {
   if (process.env.VANTAGE_PUBLIC_MODE !== "true") return null;
@@ -47,29 +49,36 @@ async function getPublicModeContext(request: NextRequest): Promise<AuthContext |
 }
 
 export async function getAuthContext(request: NextRequest): Promise<AuthContext | null> {
+  // Prefer a real authenticated session. This is critical for email
+  // verification: the verify endpoint issues the session cookie, and the
+  // freshly verified user must not be downgraded back to the anonymous
+  // workspace simply because public/pilot mode is enabled.
+  const token = getSessionToken(request);
+  const session = verifySessionToken(token);
+  if (session?.sessionId) {
+    try {
+      const record = await getSessionRecord(session.sessionId);
+      if (record && !record.revokedAt) {
+        return {
+          userId: session.userId,
+          email: session.email,
+          role: session.role,
+          organizationId: session.organizationId,
+          isAnonymous: false,
+        };
+      }
+    } catch {
+      // Fail closed for a presented session. If the token cannot be verified
+      // against the session store, fall through to anonymous public mode only
+      // when explicitly enabled.
+    }
+  }
+
+  // Only guests fall back to public/pilot mode.
   const publicContext = await getPublicModeContext(request);
   if (publicContext) return publicContext;
 
-  const token = getSessionToken(request);
-  const session = verifySessionToken(token);
-  if (!session?.sessionId) return null;
-
-  let record;
-  try {
-    record = await getSessionRecord(session.sessionId);
-  } catch {
-    return null;
-  }
-
-  if (!record || record.revokedAt) return null;
-
-  return {
-    userId: session.userId,
-    email: session.email,
-    role: session.role,
-    organizationId: session.organizationId,
-    isAnonymous: false,
-  };
+  return null;
 }
 
 export async function requireAuth(request: NextRequest): Promise<NextResponse | AuthContext> {
