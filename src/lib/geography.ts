@@ -58,7 +58,7 @@ const CITY_REGION_DEFINITIONS: Record<string, string> = {
   "ch|zurich": "Zurich",
   "dk|copenhagen": "Capital Region of Denmark",
   "ng|lagos": "Lagos",
-];
+};
 
 const REGION_ALIASES: Record<string, string> = {
   on: "Ontario",
@@ -71,11 +71,10 @@ const REGION_ALIASES: Record<string, string> = {
   il: "Illinois",
   tx: "Texas",
   be: "Berlin",
-  greater accra: "Greater Accra",
-  greater london: "Greater London",
+  "greater accra": "Greater Accra",
+  "greater london": "Greater London",
   nsw: "New South Wales",
   vic: "Victoria",
-  wa: "Western Australia",
   wa: "Western Australia",
 };
 
@@ -83,9 +82,7 @@ export function normalizeCountry(value?: string): NormalizedCountry | undefined 
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
   const definition = COUNTRY_BY_ALIAS.get(trimmed.toLowerCase());
-  return definition
-    ? { countryCode: definition.code, countryName: definition.name }
-    : { countryName: trimmed };
+  return definition ? { countryCode: definition.code, countryName: definition.name } : { countryName: trimmed };
 }
 
 export function normalizeGeography(input: {
