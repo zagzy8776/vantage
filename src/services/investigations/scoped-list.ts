@@ -1,6 +1,6 @@
 import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { investigationAccess, investigationBusinesses, investigationSearchRuns, investigationShares, investigations } from "@/lib/db/schema";
+import { investigationAccess, investigationBusinesses, investigationSearchRuns, investigationShares, investigations, searchRunAccess } from "@/lib/db/schema";
 import type { InvestigationStatus, InvestigationSummary } from "./types";
 import type { AuthContext } from "@/auth/types";
 
@@ -23,10 +23,12 @@ export async function listScopedInvestigations(auth: AuthContext, params: {
     ) : undefined,
   ].filter((value): value is NonNullable<typeof value> => Boolean(value));
 
-  const visibility = sql`(
+  const ownerVisibility = sql`(
     ${investigationAccess.ownerId} = ${auth.userId}
-    OR ${auth.organizationId ? sql`${investigationAccess.organizationId} = ${auth.organizationId}` : sql`false`}
+    OR ${searchRunAccess.ownerId} = ${auth.userId}
     OR (${investigationShares.userId} = ${auth.userId} AND ${investigationShares.permission} <> 'none')
+    OR (${auth.organizationId ? sql`${investigationAccess.organizationId} = ${auth.organizationId}` : sql`false`})
+    OR (${auth.organizationId ? sql`${searchRunAccess.organizationId} = ${auth.organizationId}` : sql`false`})
   )`;
 
   const rows = await getDb().selectDistinct({
@@ -41,9 +43,11 @@ export async function listScopedInvestigations(auth: AuthContext, params: {
     createdAt: investigations.createdAt,
     updatedAt: investigations.updatedAt,
   }).from(investigations)
-    .innerJoin(investigationAccess, eq(investigationAccess.investigationId, investigations.id))
+    .leftJoin(investigationAccess, eq(investigationAccess.investigationId, investigations.id))
+    .leftJoin(investigationSearchRuns, eq(investigationSearchRuns.investigationId, investigations.id))
+    .leftJoin(searchRunAccess, eq(searchRunAccess.searchRunId, investigationSearchRuns.searchRunId))
     .leftJoin(investigationShares, eq(investigationShares.investigationAccessId, investigationAccess.id))
-    .where(and(...filters, visibility))
+    .where(and(...filters, ownerVisibility))
     .orderBy(desc(investigations.createdAt));
 
   const total = rows.length;
