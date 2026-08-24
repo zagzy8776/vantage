@@ -31,13 +31,21 @@ export async function getSearchWorkspaceId(searchRunId: string): Promise<string 
 }
 
 export async function canAccessSearchRun(searchRunId: string, auth: AuthContext): Promise<boolean> {
-  const access = await getSearchRunOwner(searchRunId);
-  if (!access) return false;
-  if (access.ownerId === auth.userId) return true;
-  if (access.organizationId && access.organizationId === auth.organizationId) {
-    return ["owner", "admin", "analyst", "reviewer", "client"].includes(auth.role);
-  }
-  return false;
+  // Match the same owner/organization visibility rule used by the history API.
+  // Do not rely on the first access row: a run may have more than one access
+  // record after sharing or organization-level access is added.
+  const rows = await getDb()
+    .select({ ownerId: searchRunAccess.ownerId, organizationId: searchRunAccess.organizationId })
+    .from(searchRunAccess)
+    .where(eq(searchRunAccess.searchRunId, searchRunId));
+
+  return rows.some((access) => {
+    if (access.ownerId === auth.userId) return true;
+    if (access.organizationId && access.organizationId === auth.organizationId) {
+      return ["owner", "admin", "analyst", "reviewer", "client"].includes(auth.role);
+    }
+    return false;
+  });
 }
 
 function tenantVisibilitySql(auth: AuthContext, ownerColumn: string, organizationColumn: string) {
