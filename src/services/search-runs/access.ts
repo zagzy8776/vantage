@@ -1,5 +1,4 @@
-import { eq } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { searchRunAccess } from "@/lib/db/schema";
 import type { AuthContext } from "@/auth/types";
@@ -41,17 +40,28 @@ export async function canAccessSearchRun(searchRunId: string, auth: AuthContext)
   return false;
 }
 
-/**
- * A business is customer-visible only when it has been attached to at least
- * one search run that this customer can access. Global business records remain
- * shared internally, but customer APIs never expose them without this scope.
- */
 export async function canAccessBusiness(businessId: string, auth: AuthContext): Promise<boolean> {
   const result = await getDb().execute(sql`
     SELECT 1
     FROM search_run_businesses srb
     INNER JOIN search_run_access sra ON sra.search_run_id = srb.search_run_id
     WHERE srb.business_id = ${businessId}
+      AND (
+        sra.owner_id = ${auth.userId}
+        OR (${auth.organizationId ?? null} IS NOT NULL AND sra.organization_id = ${auth.organizationId ?? null})
+      )
+    LIMIT 1
+  `);
+  return result.rows.length > 0;
+}
+
+export async function canAccessLead(leadId: string, auth: AuthContext): Promise<boolean> {
+  const result = await getDb().execute(sql`
+    SELECT 1
+    FROM leads l
+    INNER JOIN search_run_businesses srb ON srb.business_id = l.business_id
+    INNER JOIN search_run_access sra ON sra.search_run_id = srb.search_run_id
+    WHERE l.id = ${leadId}
       AND (
         sra.owner_id = ${auth.userId}
         OR (${auth.organizationId ?? null} IS NOT NULL AND sra.organization_id = ${auth.organizationId ?? null})
