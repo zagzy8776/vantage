@@ -1,13 +1,10 @@
 /**
  * POST /api/auth/signup
  *
- * Self-service account creation. Creates an UNVERIFIED account and emails a
- * 6-digit verification code. No session is issued here - the account cannot
- * be used until POST /api/auth/verify-email succeeds.
- *
- * In explicitly enabled VANTAGE_EMAIL_TEST_MODE, the code is returned for
- * controlled testing without sending an email. This mode is opt-in and must
- * never be enabled for a real customer-facing deployment.
+ * Self-service account creation. Normally creates an UNVERIFIED account and
+ * emails a 6-digit verification code. While VANTAGE is running in the
+ * explicit pre-domain temporary auth mode, the account is activated and a
+ * session is issued immediately so product testing does not depend on email.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -22,8 +19,11 @@ import {
 import {
   findLatestPendingVerification,
   insertVerification,
+  activateUserWithWorkspace,
 } from "@/auth/verification-store";
+import { createAuthenticatedSession, sessionResponse } from "@/auth/session-issue";
 import { sendVerificationEmail } from "@/lib/email/resend";
+import { isTemporaryAuthModeEnabled } from "@/auth/auth-mode";
 import { checkEndpointRateLimit } from "@/lib/security/rate-limiter";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,6 @@ interface IssueOutcome {
   sent: boolean;
   configured: boolean;
   reason?: string;
-  /** Set only when an explicit test mode is enabled. */
   testOnlyCode?: string;
 }
 
@@ -40,7 +39,6 @@ function isEmailTestModeEnabled(): boolean {
   return process.env.VANTAGE_EMAIL_TEST_MODE === "true";
 }
 
-/** Issue a code; persist only its hash; email the plaintext unless test mode is enabled. */
 async function issueAndSendCode(userId: string, email: string): Promise<IssueOutcome> {
   const code = generateVerificationCode();
   await insertVerification({
@@ -50,18 +48,11 @@ async function issueAndSendCode(userId: string, email: string): Promise<IssueOut
   });
 
   if (isEmailTestModeEnabled()) {
-    return {
-      sent: false,
-      configured: false,
-      testOnlyCode: code,
-    };
+    return { sent: false, configured: false, testOnlyCode: code };
   }
 
   const result = await sendVerificationEmail(email, code);
-  if (result.sent) {
-    return { sent: true, configured: true };
-  }
-
+  if (result.sent) return { sent: true, configured: true };
   return {
     sent: false,
     configured: result.configured,
@@ -70,7 +61,7 @@ async function issueAndSendCode(userId: string, email: string): Promise<IssueOut
 }
 
 function uniformOk(): NextResponse {
-  return NextResponse.json({ ok: true, message: "Check your email to continue." });
+  return NextResponse.json({ ok: true, message: "Your account already exists. Please sign in." });
 }
 
 export async function POST(request: NextRequest) {
@@ -93,12 +84,11 @@ export async function POST(request: NextRequest) {
     const email = String(body.email).trim().toLowerCase();
     const name = String(body.name).trim();
     const password = String(body.password);
+    const temporaryAuthMode = isTemporaryAuthModeEnabled();
 
     const existing = await findUserByEmail(email);
 
-    if (existing?.emailVerified) {
-      return uniformOk();
-    }
+    if (existing?.emailVerified) return uniformOk();
 
     let userId: string;
     if (existing && !existing.emailVerified) {
@@ -115,12 +105,35 @@ export async function POST(request: NextRequest) {
       userId = created.id;
     }
 
-    // In test mode, always issue a fresh code so the tester can retry without
-    // being blocked by a previously pending verification record.
-    const pending = await findLatestPendingVerification(userId);
-    if (pending && !isEmailTestModeEnabled()) {
-      return uniformOk();
+    if (temporaryAuthMode) {
+      const activated = await activateUserWithWorkspace({ userId, name });
+      const user = await findUserByEmail(email);
+      if (!user) return NextResponse.json({ error: "Sign up failed" }, { status: 500 });
+
+      const { token, expiresAt } = await createAuthenticatedSession({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: activated.role,
+        organizationId: activated.organizationId,
+      });
+
+      return sessionResponse(
+        {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: activated.role,
+          organizationId: activated.organizationId,
+        },
+        { authenticated: true, temporaryAuth: true },
+        token,
+        expiresAt
+      );
     }
+
+    const pending = await findLatestPendingVerification(userId);
+    if (pending && !isEmailTestModeEnabled()) return uniformOk();
 
     const outcome = await issueAndSendCode(userId, email);
 
@@ -134,12 +147,16 @@ export async function POST(request: NextRequest) {
 
     if (!outcome.sent) {
       return NextResponse.json(
-        { error: outcome.reason ?? "Could not send the verification email. Configure a VANTAGE sending domain before enabling customer email verification." },
+        {
+          error:
+            outcome.reason ??
+            "Could not send the verification email. Configure a VANTAGE sending domain before enabling customer email verification.",
+        },
         { status: 503 }
       );
     }
 
-    return uniformOk();
+    return NextResponse.json({ ok: true, message: "Check your email to continue." });
   } catch (error) {
     console.error("Signup error:", error instanceof Error ? error.message : "unknown");
     return NextResponse.json({ error: "Sign up failed" }, { status: 500 });
