@@ -13,6 +13,8 @@ import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
+const ENFORCE_RESEARCH_CREDITS = process.env.ENFORCE_RESEARCH_CREDITS === "true";
+
 function newWorkerId() {
   return `discover_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -32,7 +34,7 @@ export async function POST(request: NextRequest) {
     const plan = billable ? await getResearchPlanForUser(auth.userId, auth.organizationId) : "free";
     const reservationRunId = `reservation_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    if (billable) {
+    if (billable && ENFORCE_RESEARCH_CREDITS) {
       const reservation = await reserveResearchCredit({ userId: auth.userId, plan, searchRunId: reservationRunId });
       if (!reservation.ok) {
         return NextResponse.json({
@@ -64,13 +66,14 @@ export async function POST(request: NextRequest) {
         workflowRunId: workflowRun.runId,
         worker: workerId,
         anonymous: Boolean(auth.isAnonymous),
+        researchCreditsEnforced: ENFORCE_RESEARCH_CREDITS,
       }));
 
       return NextResponse.json({ runId, status: "queued", workflowRunId: workflowRun.runId }, { status: 202 });
     } catch (error) {
       if (runId && workerId) await releaseSearchRunLock(runId, workerId).catch(() => undefined);
       if (runId) await getDb().delete(searchRuns).where(eq(searchRuns.id, runId)).catch(() => undefined);
-      if (billable) {
+      if (billable && ENFORCE_RESEARCH_CREDITS) {
         await refundResearchCredit({
           userId: auth.userId,
           searchRunId: reservationRunId,
