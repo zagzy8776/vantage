@@ -5,6 +5,18 @@ import { requireAuth } from "@/auth/middleware";
 
 export const dynamic = "force-dynamic";
 
+function customerResult(result: Record<string, unknown> | null) {
+  if (!result) return null;
+  return {
+    results: Array.isArray(result.results) ? result.results : [],
+    storedIds: Array.isArray(result.storedIds) ? result.storedIds : [],
+    totalUniqueResults: typeof result.totalUniqueResults === "number" ? result.totalUniqueResults : undefined,
+    workflow: result.workflow && typeof result.workflow === "object"
+      ? { stage: (result.workflow as { stage?: unknown }).stage }
+      : undefined,
+  };
+}
+
 export async function GET(request: NextRequest, context: { params: { runId: string } }) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
@@ -14,9 +26,9 @@ export async function GET(request: NextRequest, context: { params: { runId: stri
     const run = await getSearchRun(context.params.runId);
     if (!run) return NextResponse.json({ error: "Search run not found." }, { status: 404 });
 
-    // Customer-facing discovery state deliberately contains only research
-    // progress and outcomes. Provider names, diagnostics, fallback details and
-    // internal cost-bearing metadata stay on server/admin surfaces.
+    // Customer-facing state contains outcomes and progress only. Provider
+    // names, diagnostics, fallback information, source internals and cost data
+    // remain server/admin concerns.
     return NextResponse.json({
       runId: run.id,
       status: run.status,
@@ -25,8 +37,7 @@ export async function GET(request: NextRequest, context: { params: { runId: stri
       completedAt: run.completedAt,
       durationMs: run.durationMs,
       stages: run.stages ?? {},
-      failures: run.failures ?? [],
-      result: run.result ?? null,
+      result: customerResult(run.result),
       summary: {
         discovered: run.discoveredCount,
         webCandidates: run.candidatesReturned,
@@ -35,6 +46,7 @@ export async function GET(request: NextRequest, context: { params: { runId: stri
         analyzed: typeof (run.result?.workflow as { aiAnalyzedCount?: unknown } | undefined)?.aiAnalyzedCount === "number"
           ? (run.result?.workflow as { aiAnalyzedCount: number }).aiAnalyzedCount
           : 0,
+        hasIssues: run.status === "completed_with_errors" || (Array.isArray(run.failures) && run.failures.length > 0),
       },
     }, {
       status: 200,
