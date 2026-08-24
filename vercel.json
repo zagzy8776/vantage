@@ -5,5 +5,15 @@
       "path": "/api/system/sweep",
       "schedule": "0 3 * * *"
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/discover",
+      "destination": "/api/discover-open"
+    },
+    {
+      "source": "/billing",
+      "destination": "/"
+    }
   ]
 }
