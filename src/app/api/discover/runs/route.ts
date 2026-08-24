@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/discover/runs
  *
- * Returns persisted discovery history scoped to the authenticated user's
- * account/organization. Only the platform owner (the owner account without
- * an organization) may inspect legacy ownerless data.
+ * Returns only research explicitly owned by the authenticated user or their
+ * organization. Legacy/ownerless rows are intentionally excluded so a new
+ * workspace never opens with somebody else's searches or demo data.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
@@ -21,14 +21,13 @@ export async function GET(request: NextRequest) {
   try {
     const rawLimit = Number(new URL(request.url).searchParams.get("limit") ?? 20);
     const limit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 20, 50));
-    const platformOwner = auth.role === "owner" && !auth.organizationId;
 
-    const visibility = platformOwner
-      ? undefined
-      : or(
+    const visibility = auth.organizationId
+      ? or(
           eq(searchRunAccess.ownerId, auth.userId),
-          auth.organizationId ? eq(searchRunAccess.organizationId, auth.organizationId) : undefined,
-        );
+          eq(searchRunAccess.organizationId, auth.organizationId),
+        )
+      : eq(searchRunAccess.ownerId, auth.userId);
 
     const runs = await getDb()
       .select({
@@ -49,7 +48,7 @@ export async function GET(request: NextRequest) {
         result: searchRuns.result,
       })
       .from(searchRuns)
-      .leftJoin(searchRunAccess, eq(searchRunAccess.searchRunId, searchRuns.id))
+      .innerJoin(searchRunAccess, eq(searchRunAccess.searchRunId, searchRuns.id))
       .where(visibility)
       .orderBy(desc(searchRuns.createdAt))
       .limit(limit);
