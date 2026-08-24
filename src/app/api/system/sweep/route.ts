@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { start } from "workflow/api";
+import { discoveryRecoveryWorkflow } from "@/workflows/discovery-recovery";
 import { recoverOrphanedSearchRuns } from "@/services/search-runs/recovery";
 import { reconcileActiveInvestigationExecutions } from "@/services/investigations/planning/executor";
 
@@ -8,13 +10,9 @@ export const maxDuration = 60;
 /**
  * POST/GET /api/system/sweep
  *
- * Scheduled reconciliation endpoint. It is intentionally short-lived: it
- * claims bounded work and schedules durable workflows rather than waiting for
- * provider calls to finish inside this HTTP invocation.
- *
- * Every caller must present Authorization: Bearer $SWEEP_SECRET. We do not
- * trust a caller-controlled `x-vercel-cron` header as authentication because
- * that header can be spoofed by a public HTTP client.
+ * Short-lived scheduler endpoint. It authenticates the external cron caller,
+ * claims a bounded number of orphaned runs, and starts durable workflows.
+ * Provider calls never run directly inside this HTTP request.
  */
 
 function isAuthorized(request: NextRequest): boolean {
@@ -33,7 +31,14 @@ async function runSweep(request: NextRequest) {
   const maxExecutions = Math.max(1, Math.min(Number(process.env.SWEEP_MAX_EXECUTIONS) || 2, 10));
   const startedAt = Date.now();
 
-  const searchRunRecovery = await recoverOrphanedSearchRuns({ maxRuns });
+  const searchRunRecovery = await recoverOrphanedSearchRuns({
+    maxRuns,
+    startWorkflow: async (query, runId, workerId) => {
+      const run = await start(discoveryRecoveryWorkflow, [query, runId, workerId]);
+      return run.runId;
+    },
+  });
+
   const planRecovery = await reconcileActiveInvestigationExecutions(maxExecutions);
 
   return NextResponse.json({
