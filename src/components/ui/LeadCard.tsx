@@ -11,10 +11,13 @@ export interface LeadCardProps {
   lead: Lead;
   selected?: boolean;
   onSelectedChange?: (selected: boolean) => void;
+  /** Backwards-compatible alias used by the Discover page. */
+  onSelect?: (selected: boolean) => void;
   onAnalyzeWebsite?: () => void;
 }
 
-export function LeadCard({ lead, selected = false, onSelectedChange, onAnalyzeWebsite }: LeadCardProps) {
+export function LeadCard({ lead, selected = false, onSelectedChange, onSelect, onAnalyzeWebsite }: LeadCardProps) {
+  const handleSelectedChange = onSelectedChange ?? onSelect;
   const scoreTier = lead.opportunityScore >= 90
     ? "Exceptional"
     : lead.opportunityScore >= 80
@@ -42,7 +45,6 @@ export function LeadCard({ lead, selected = false, onSelectedChange, onAnalyzeWe
         </div>
 
         <div className="flex-1 min-w-0 space-y-1.5">
-          {/* Business name + status */}
           <div className="flex items-start justify-between gap-2">
             <p className="font-semibold text-foreground text-sm group-hover:text-accent transition-colors truncate">
               {lead.business.name}
@@ -50,12 +52,10 @@ export function LeadCard({ lead, selected = false, onSelectedChange, onAnalyzeWe
             <StatusBadge type="stage" value={lead.status} />
           </div>
 
-          {/* Category + Location */}
           <p className="text-xs text-subtle truncate">
             {lead.business.category} • {lead.business.location.city}, {lead.business.location.country}
           </p>
 
-          {/* Website */}
           <p className="text-xs text-muted font-mono truncate">
             {websiteDisplay}
           </p>
@@ -66,14 +66,14 @@ export function LeadCard({ lead, selected = false, onSelectedChange, onAnalyzeWe
             </p>
           )}
 
-          {(onSelectedChange || onAnalyzeWebsite) && (
+          {(handleSelectedChange || onAnalyzeWebsite) && (
             <div className="flex items-center gap-2 pt-1 flex-wrap">
-              {onSelectedChange && (
+              {handleSelectedChange && (
                 <label className="inline-flex items-center gap-1 text-[10px] uppercase font-mono text-subtle cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={selected}
-                    onChange={(event) => onSelectedChange(event.target.checked)}
+                    onChange={(event) => handleSelectedChange(event.target.checked)}
                     className="accent-accent"
                   />
                   Select
@@ -91,7 +91,6 @@ export function LeadCard({ lead, selected = false, onSelectedChange, onAnalyzeWe
             Sources: {sourceLabel}
           </p>
 
-          {/* Reason */}
           {lead.reason && (
             <p className="text-[10px] text-subtle line-clamp-2 leading-tight">
               {lead.reason}
@@ -99,7 +98,6 @@ export function LeadCard({ lead, selected = false, onSelectedChange, onAnalyzeWe
           )}
         </div>
 
-        {/* Opportunity Score */}
         <div className="flex flex-col items-center justify-center gap-1 shrink-0">
           <OpportunityScore score={lead.opportunityScore} size="sm" />
           <span className="text-[9px] font-mono text-subtle uppercase">{scoreTier}</span>
