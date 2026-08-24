@@ -1,13 +1,16 @@
 /**
  * Temporary pre-domain authentication mode.
  *
- * VANTAGE can run without a verified sending domain while the product is being
- * tested. During this pre-domain period we default to temporary auth unless
- * VANTAGE_AUTH_TEMPORARY_MODE is explicitly set to "false". That keeps a
- * newly-created deployment usable even when the environment variable is
- * missing. Once VANTAGE email delivery is live, set the variable to "false" to
- * turn real email verification back on.
+ * VANTAGE is currently running before a verified sending domain exists, so
+ * account creation/sign-in must not depend on Resend. Temporary auth stays on
+ * unless the deployment explicitly declares that the email domain is ready.
+ *
+ * To switch to real email verification later, set BOTH:
+ *   VANTAGE_DOMAIN_READY=true
+ *   VANTAGE_AUTH_TEMPORARY_MODE=false
  */
 export function isTemporaryAuthModeEnabled(): boolean {
-  return process.env.VANTAGE_AUTH_TEMPORARY_MODE !== "false";
+  const domainReady = process.env.VANTAGE_DOMAIN_READY === "true";
+  const explicitlyDisabled = process.env.VANTAGE_AUTH_TEMPORARY_MODE === "false";
+  return !(domainReady && explicitlyDisabled);
 }
