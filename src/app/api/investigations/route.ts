@@ -3,15 +3,14 @@ import { createInvestigation, listInvestigations } from "@/services/investigatio
 import type { InvestigationStatus } from "@/services/investigations/types";
 import { unstable_noStore } from "next/cache";
 import { requireAuth, requireRole } from "@/auth/middleware";
+import { getInvestigationAccessInfo } from "@/auth/user-store";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  // Require authentication
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
 
-  // Require analyst or higher role to create investigations
   const authorized = await requireRole(request, ["owner", "admin", "analyst"]);
   if (authorized instanceof NextResponse) return authorized;
 
@@ -20,6 +19,12 @@ export async function POST(request: NextRequest) {
     if (!body) return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
 
     const result = await createInvestigation(body);
+    const { recordInvestigationOwner } = await import("@/auth/user-store");
+    await recordInvestigationOwner({
+      investigationId: result.investigationId,
+      ownerId: auth.userId,
+      organizationId: auth.organizationId,
+    });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof Error) {
@@ -31,22 +36,49 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     unstable_noStore();
     const { searchParams } = new URL(request.url);
-    const page = Number(searchParams.get("page") ?? "1");
-    const pageSize = Number(searchParams.get("pageSize") ?? "20");
+    const requestedPage = Math.max(1, Number(searchParams.get("page") ?? "1"));
+    const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") ?? "20")));
     const status = searchParams.get("status") ?? undefined;
     const validStatuses = ["draft", "active", "completed", "archived"];
     if (status && !validStatuses.includes(status)) return NextResponse.json({ error: "Invalid investigation status." }, { status: 400 });
-    const result = await listInvestigations({
-      page,
-      pageSize,
+
+    // listInvestigations predates tenant isolation and reads the base table.
+    // Load the bounded result set server-side, then enforce access before any
+    // investigation data leaves this route. This also honors explicit shares.
+    const all = await listInvestigations({
+      page: 1,
+      pageSize: 100,
       search: searchParams.get("search") ?? undefined,
       status: status as InvestigationStatus | undefined,
     });
-    return NextResponse.json(result, { status: 200, headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
+
+    const visible = [] as typeof all.items;
+    for (const item of all.items) {
+      const access = await getInvestigationAccessInfo(item.id);
+      if (!access) continue;
+      const isOwner = access.ownerId === auth.userId;
+      const sameOrganization = Boolean(access.organizationId && auth.organizationId && access.organizationId === auth.organizationId);
+      const shared = access.sharedWith.some((entry) => entry.userId === auth.userId);
+      if (isOwner || sameOrganization || shared || auth.role === "owner" || auth.role === "admin") visible.push(item);
+    }
+
+    const total = visible.length;
+    const start = (requestedPage - 1) * pageSize;
+    const items = visible.slice(start, start + pageSize);
+
+    return NextResponse.json({
+      items,
+      total,
+      page: requestedPage,
+      pageSize,
+    }, { status: 200, headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
   } catch {
     return NextResponse.json({ error: "Failed to list investigations." }, { status: 500 });
   }
