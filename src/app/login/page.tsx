@@ -20,11 +20,11 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
 
-  // Already signed in? Skip the form entirely.
   useEffect(() => {
     let cancelled = false;
     fetchCurrentUser()
@@ -35,9 +35,6 @@ function LoginForm() {
       .finally(() => {
         if (!cancelled) setIsCheckingSession(false);
       });
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -45,7 +42,7 @@ function LoginForm() {
     event.preventDefault();
     setFormError(null);
 
-    const trimmedEmail = email.trim();
+    const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !password) {
       setFormError("Email and password are required.");
       return;
@@ -57,17 +54,40 @@ function LoginForm() {
       if (!result.ok) {
         if (result.needsVerification && result.email) {
           setUnverifiedEmail(result.email);
+          setFormError(null);
+          return;
         }
         setFormError(result.error ?? "Invalid email or password.");
         return;
       }
-      // Session cookie is now set by the server - full navigation so the
-      // app shell re-mounts with authenticated state.
       window.location.assign(nextPath);
     } catch {
       setFormError("Sign-in is temporarily unavailable. Please try again.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const resendCurrentEmail = async () => {
+    const targetEmail = (unverifiedEmail ?? email).trim().toLowerCase();
+    if (!targetEmail) {
+      setFormError("Enter your email address first.");
+      return;
+    }
+
+    setIsResending(true);
+    setFormError(null);
+    try {
+      const result = await resendVerification(targetEmail);
+      if (!result.ok) {
+        setFormError(result.error ?? "Could not resend the verification code right now.");
+        return;
+      }
+      router.push(`/verify-email?email=${encodeURIComponent(targetEmail)}`);
+    } catch {
+      setFormError("Could not resend the verification code right now.");
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -82,29 +102,16 @@ function LoginForm() {
     );
   }
 
-  const handleResendAndGo = async () => {
-    if (!unverifiedEmail) return;
-    setIsSubmitting(true);
-    try {
-      await resendVerification(unverifiedEmail);
-    } catch {
-      // The verify page offers its own resend - never block navigation here.
-    } finally {
-      setIsSubmitting(false);
-    }
-    router.push(`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`);
-  };
-
   if (unverifiedEmail) {
     return (
       <div className="space-y-4">
         <h2 className="text-sm font-bold text-foreground mb-1">Verify your email</h2>
         <p className="text-xs text-subtle">
-          Your account is not verified yet. We can email you a fresh 6-digit code, then
-          you&apos;ll complete verification on the next screen.
+          Your account is not verified yet. Send a fresh 6-digit verification code to continue.
         </p>
-        <Button size="lg" isLoading={isSubmitting} onClick={() => void handleResendAndGo()} className="w-full">
-          Resend verification code
+        <p className="text-xs font-mono text-accent">{unverifiedEmail}</p>
+        <Button size="lg" isLoading={isResending} onClick={() => void resendCurrentEmail()} className="w-full">
+          Send verification code
         </Button>
         <button
           type="button"
@@ -132,7 +139,7 @@ function LoginForm() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder="you@company.com"
-        disabled={isSubmitting}
+        disabled={isSubmitting || isResending}
       />
       <Input
         label="Password"
@@ -143,12 +150,24 @@ function LoginForm() {
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder="••••••••"
-        disabled={isSubmitting}
+        disabled={isSubmitting || isResending}
       />
       {formError && (
-        <p role="alert" className="text-xs text-danger border border-danger/30 bg-danger/5 rounded-md px-3 py-2">
-          {formError}
-        </p>
+        <div className="space-y-2">
+          <p role="alert" className="text-xs text-danger border border-danger/30 bg-danger/5 rounded-md px-3 py-2">
+            {formError}
+          </p>
+          {email.trim() && (
+            <button
+              type="button"
+              onClick={() => void resendCurrentEmail()}
+              disabled={isResending}
+              className="w-full text-xs text-accent hover:underline disabled:opacity-50"
+            >
+              Didn&apos;t receive a verification code? Send one
+            </button>
+          )}
+        </div>
       )}
       <Button type="submit" size="lg" isLoading={isSubmitting} className="w-full">
         Sign In
@@ -161,7 +180,6 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen flex items-center justify-center p-4 sm:p-6">
       <div className="w-full max-w-sm">
-        {/* Branding */}
         <div className="flex flex-col items-center gap-2 mb-8">
           <div className="w-11 h-11 rounded-lg bg-accent/15 border border-accent/40 flex items-center justify-center">
             <span className="font-mono font-extrabold text-accent text-base">VT</span>
@@ -171,7 +189,6 @@ export default function LoginPage() {
         </div>
 
         <div className="border border-border rounded-lg bg-surface p-6 shadow-sm">
-          {/* Sign In | Sign Up switcher */}
           <div className="grid grid-cols-2 mb-5 border border-border rounded-md overflow-hidden text-xs font-mono uppercase tracking-wide">
             <span className="py-2 text-center bg-accent/10 text-accent font-semibold">Sign In</span>
             <Link
@@ -191,7 +208,7 @@ export default function LoginPage() {
               <div className="flex items-center justify-center py-16">
                 <svg className="animate-spin h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 5.373 0 0 12 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
               </div>
             }
