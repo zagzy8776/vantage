@@ -35,7 +35,7 @@ export function buildFoursquareSearchParams(query: DiscoveryQuery) {
   const params = new URLSearchParams();
   const geography = normalizeGeography(query);
   params.set("query", query.category);
-  params.set("limit", String(query.limit));
+  params.set("limit", String(Math.min(50, Math.max(1, query.limit))));
 
   const ll = query.latitude !== undefined && query.longitude !== undefined ? `${query.latitude},${query.longitude}` : undefined;
   if (ll) params.set("ll", ll);
@@ -43,7 +43,7 @@ export function buildFoursquareSearchParams(query: DiscoveryQuery) {
   const regionParts = [geography?.area, geography?.city, geography?.region, countryNameForQuery(geography?.countryCode, geography?.countryName, query.country)].filter(Boolean).join(", ");
   if (regionParts && !ll) params.set("near", regionParts);
 
-  if (query.depth === "deep") params.set("sort", "DISTANCE");
+  params.set("sort", query.depth === "deep" ? "DISTANCE" : "RELEVANCE");
   return params;
 }
 
@@ -131,6 +131,7 @@ export class FoursquareBusinessProvider implements BusinessDiscoveryProvider {
 
       if (response.status === 429) return { provider: this.name, status: "rate-limited", results: [], errorMessage: "Foursquare rate limit exceeded." };
       if (response.status === 401 || response.status === 403) return { provider: this.name, status: "failed", results: [], errorMessage: "Foursquare authentication failed." };
+      if (response.status === 400) return { provider: this.name, status: "invalid-request", results: [], errorMessage: "Foursquare rejected the search request." };
       if (!response.ok) return { provider: this.name, status: "unexpected-response", results: [], errorMessage: `Foursquare request failed with status ${response.status}` };
 
       const data = (await response.json()) as FoursquareSearchResponse;
