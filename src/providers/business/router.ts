@@ -37,14 +37,6 @@ export interface RouterOptions {
   allowFallback?: boolean;
 }
 
-function isProviderUseful(result: ProviderSearchResult) {
-  return result.status === "success" && result.results.length > 0;
-}
-
-function shouldFallback(result: ProviderSearchResult) {
-  return result.status === "zero-results" || result.status === "unavailable" || result.status === "rate-limited" || result.status === "unexpected-response" || result.status === "timeout" || result.status === "failed";
-}
-
 function confidenceForMatch(a: NormalizedBusiness, b: NormalizedBusiness) {
   const left = businessKeyParts(a);
   const right = businessKeyParts(b);
@@ -123,13 +115,15 @@ export function deduplicateBusinesses(businesses: NormalizedBusiness[]) {
   return { clusters, relationships };
 }
 
-function rankClusters(clusters: DiscoveryCluster[]) {
-  return [...clusters].sort((a, b) => {
-    const aScore = calculateInitialOpportunityScore(a.canonical).score + estimateBusinessEvidenceScore(a.canonical);
-    const bScore = calculateInitialOpportunityScore(b.canonical).score + estimateBusinessEvidenceScore(b.canonical);
-    if (bScore !== aScore) return bScore - aScore;
-    return a.canonical.name.toLowerCase().localeCompare(b.canonical.name.toLowerCase());
-  });
+function rankClusters(clusters: DiscoveryCluster[], limit: number) {
+  return [...clusters]
+    .sort((a, b) => {
+      const aScore = calculateInitialOpportunityScore(a.canonical).score + estimateBusinessEvidenceScore(a.canonical);
+      const bScore = calculateInitialOpportunityScore(b.canonical).score + estimateBusinessEvidenceScore(b.canonical);
+      if (bScore !== aScore) return bScore - aScore;
+      return a.canonical.name.toLowerCase().localeCompare(b.canonical.name.toLowerCase());
+    })
+    .slice(0, Math.max(0, limit));
 }
 
 function clusterSources(cluster: DiscoveryCluster): NormalizedBusiness["source"][] {
@@ -149,100 +143,72 @@ function buildProviderSummary(result?: ProviderSearchResult): ProviderSummary {
   return { status: result.status, count: result.results.length, queried: true, errorMessage: result.errorMessage };
 }
 
-export async function runBusinessDiscovery(query: DiscoveryQuery, options: RouterOptions): Promise<DiscoveryRunResult> {
-  if (options.mode === "multi-source") {
-    const queriedProviders: DiscoverySource[] = ["foursquare", "yelp"];
-    const foursquare = await queryProvider("foursquare", query);
-    const yelp = await queryProvider("yelp", query);
-    const combined = deduplicateBusinesses([...foursquare.results, ...yelp.results]);
-    const ranked = rankClusters(combined.clusters);
+function mergeResults(results: ProviderSearchResult[]) {
+  return deduplicateBusinesses(results.flatMap((result) => result.results));
+}
 
+export async function runBusinessDiscovery(query: DiscoveryQuery, options: RouterOptions): Promise<DiscoveryRunResult> {
+  const primaryProvider = options.primary ?? "foursquare";
+  const fallbackProvider: DiscoverySource = primaryProvider === "foursquare" ? "yelp" : "foursquare";
+  const providers: Record<DiscoverySource, ProviderSummary> = {
+    foursquare: { status: "not-queried", count: 0, queried: false },
+    yelp: { status: "not-queried", count: 0, queried: false },
+  };
+
+  if (options.mode === "multi-source") {
+    const [foursquare, yelp] = await Promise.all([
+      queryProvider("foursquare", query),
+      queryProvider("yelp", query),
+    ]);
+    providers.foursquare = buildProviderSummary(foursquare);
+    providers.yelp = buildProviderSummary(yelp);
+    const combined = mergeResults([foursquare, yelp]);
+    const ranked = rankClusters(combined.clusters, query.limit);
     return {
       clusters: ranked,
       results: ranked.map((cluster) => cluster.canonical),
       resultSources: ranked.map(clusterSources),
       totalUniqueResults: ranked.length,
-      providers: { foursquare: buildProviderSummary(foursquare), yelp: buildProviderSummary(yelp) },
-      queriedProviders,
+      providers,
+      queriedProviders: ["foursquare", "yelp"],
       fallbackUsed: false,
       mode: options.mode,
       requestedProvider: options.requestedProvider ?? "both",
     };
   }
 
-  const primaryProvider = options.primary ?? "foursquare";
-  const fallbackProvider: DiscoverySource = primaryProvider === "foursquare" ? "yelp" : "foursquare";
-  const queriedProviders: DiscoverySource[] = [primaryProvider];
   const primary = await queryProvider(primaryProvider, query);
+  providers[primaryProvider] = buildProviderSummary(primary);
 
-  const providerSummary = (result: ProviderSearchResult) => ({
-    foursquare: primaryProvider === "foursquare" ? buildProviderSummary(result) : { status: "not-queried" as const, count: 0, queried: false },
-    yelp: primaryProvider === "yelp" ? buildProviderSummary(result) : { status: "not-queried" as const, count: 0, queried: false },
-  });
-
-  if (!options.allowFallback) {
-    const combined = deduplicateBusinesses(primary.results);
-    const ranked = rankClusters(combined.clusters);
+  if (options.allowFallback && primary.results.length < query.limit) {
+    const fallback = await queryProvider(fallbackProvider, query);
+    providers[fallbackProvider] = buildProviderSummary(fallback);
+    const combined = mergeResults([primary, fallback]);
+    const ranked = rankClusters(combined.clusters, query.limit);
     return {
       clusters: ranked,
       results: ranked.map((cluster) => cluster.canonical),
       resultSources: ranked.map(clusterSources),
       totalUniqueResults: ranked.length,
-      providers: providerSummary(primary),
-      queriedProviders,
-      fallbackUsed: false,
-      mode: options.mode,
-      requestedProvider: options.requestedProvider ?? primaryProvider,
-    };
-  }
-
-  if (isProviderUseful(primary)) {
-    const combined = deduplicateBusinesses(primary.results);
-    const ranked = rankClusters(combined.clusters);
-    return {
-      clusters: ranked,
-      results: ranked.map((cluster) => cluster.canonical),
-      resultSources: ranked.map(clusterSources),
-      totalUniqueResults: ranked.length,
-      providers: providerSummary(primary),
-      queriedProviders,
-      fallbackUsed: false,
+      providers,
+      queriedProviders: [primaryProvider, fallbackProvider],
+      fallbackUsed: true,
       mode: options.mode,
       requestedProvider: options.requestedProvider ?? "best-available",
     };
   }
 
-  if (!shouldFallback(primary)) {
-    return {
-      clusters: [],
-      results: [],
-      resultSources: [],
-      totalUniqueResults: 0,
-      providers: providerSummary(primary),
-      queriedProviders,
-      fallbackUsed: false,
-      mode: options.mode,
-      requestedProvider: options.requestedProvider ?? "best-available",
-    };
-  }
-
-  queriedProviders.push(fallbackProvider);
-  const fallback = await queryProvider(fallbackProvider, query);
-  const combined = deduplicateBusinesses([...primary.results, ...fallback.results]);
-  const ranked = rankClusters(combined.clusters);
-
+  const combined = mergeResults([primary]);
+  const ranked = rankClusters(combined.clusters, query.limit);
   return {
     clusters: ranked,
     results: ranked.map((cluster) => cluster.canonical),
     resultSources: ranked.map(clusterSources),
     totalUniqueResults: ranked.length,
-      providers: {
-        foursquare: primaryProvider === "foursquare" ? buildProviderSummary(primary) : buildProviderSummary(fallback),
-        yelp: primaryProvider === "yelp" ? buildProviderSummary(primary) : buildProviderSummary(fallback),
-      },
-    queriedProviders,
-    fallbackUsed: true,
+    providers,
+    queriedProviders: [primaryProvider],
+    fallbackUsed: false,
     mode: options.mode,
-      requestedProvider: options.requestedProvider ?? "best-available",
+    requestedProvider: options.requestedProvider ?? (options.allowFallback ? "best-available" : primaryProvider),
   };
 }
