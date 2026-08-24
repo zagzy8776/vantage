@@ -1,9 +1,9 @@
+
 /**
  * Shared session issuance for login and email-verification flows.
  *
- * Extracted from POST /api/auth/login so every entry point that creates an
- * authenticated VANTAGE session uses identical mechanics: HMAC-signed token
- * (./tokens), server-side revocation record (./user-store), HttpOnly cookie.
+ * Every entry point that creates an authenticated VANTAGE session uses the
+ * same HMAC-signed token, server-side revocation record, and HttpOnly cookie.
  */
 
 import { randomBytes } from "crypto";
@@ -12,22 +12,8 @@ import { createSessionToken, SESSION_COOKIE_NAME } from "./tokens";
 import { recordSession } from "./user-store";
 import type { UserRole } from "./types";
 
-/** Default session lifetime: 24 hours (matches tokens.ts) */
+/** Default session lifetime: 24 hours */
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-
-export function buildSessionCookie(token: string): string {
-  const attributes = [
-    `${SESSION_COOKIE_NAME}=${token}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (process.env.NODE_ENV === "production") {
-    attributes.push("Secure");
-  }
-  attributes.push(`Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
-  return attributes.join("; ");
-}
 
 export interface SessionUser {
   id: string;
@@ -37,10 +23,6 @@ export interface SessionUser {
   organizationId?: string | null;
 }
 
-/**
- * Create a full authenticated session for a user:
- * signed token + server-side session record + Set-Cookie header value.
- */
 export async function createAuthenticatedSession(user: SessionUser): Promise<{
   token: string;
   expiresAt: Date;
@@ -71,7 +53,11 @@ export async function createAuthenticatedSession(user: SessionUser): Promise<{
   return { token, expiresAt };
 }
 
-/** Convenience: build a JSON response with the session cookie attached. */
+/**
+ * Attach the authenticated session through NextResponse.cookies.set rather
+ * than a raw Set-Cookie header. This allows the session cookie to coexist
+ * safely with the anonymous workspace cookie created by middleware.
+ */
 export function sessionResponse(
   user: SessionUser,
   payload: Record<string, unknown>,
@@ -85,10 +71,21 @@ export function sessionResponse(
       name: user.name,
       role: user.role,
       organizationId: user.organizationId ?? undefined,
+      anonymous: false,
     },
     expiresAt: expiresAt.toISOString(),
     ...payload,
   });
-  response.headers.set("Set-Cookie", buildSessionCookie(token));
+
+  response.cookies.set({
+    name: SESSION_COOKIE_NAME,
+    value: token,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: Math.floor(SESSION_TTL_MS / 1000),
+  });
+
   return response;
 }
