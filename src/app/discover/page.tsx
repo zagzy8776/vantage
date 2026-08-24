@@ -107,6 +107,16 @@ export default function DiscoverPage() {
     }
   }, []);
 
+  const getSnapshotRunId = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.sessionStorage.getItem(DISCOVER_SNAPSHOT_KEY);
+      return raw ? (JSON.parse(raw) as DiscoverSnapshot).runId : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const clearRememberedRun = useCallback((clearSnapshot = true) => {
     if (typeof window === "undefined") return;
     try {
@@ -178,13 +188,13 @@ export default function DiscoverPage() {
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setError(null);
+    let restored = false;
     try {
-      const restored = restoreSnapshot();
+      restored = restoreSnapshot();
       const response = await fetch("/api/discover/runs?limit=50", { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         if (!restored) throw new Error(payload?.error ?? "Discovery history is unavailable.");
-        setHistoryLoading(false);
         return;
       }
       const history = (payload?.runs ?? []) as SearchRun[];
@@ -192,7 +202,7 @@ export default function DiscoverPage() {
 
       const queryRunId = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("runId") : null;
       const storedRunId = typeof window !== "undefined" ? window.sessionStorage.getItem(LAST_RUN_STORAGE_KEY) : null;
-      const snapshotRunId = typeof window !== "undefined" ? (() => { try { const raw = window.sessionStorage.getItem(DISCOVER_SNAPSHOT_KEY); return raw ? (JSON.parse(raw) as DiscoverSnapshot).runId : null; } catch { return null; } })() : null;
+      const snapshotRunId = getSnapshotRunId();
       const preferredRunId = queryRunId ?? storedRunId ?? snapshotRunId;
       const preferredRun = preferredRunId ? history.find((run) => run.id === preferredRunId) : undefined;
 
@@ -211,11 +221,11 @@ export default function DiscoverPage() {
         clearRememberedRun(false);
       }
     } catch (err) {
-      if (!restoreSnapshot()) setError(err instanceof Error ? err.message : "Discovery history is unavailable.");
+      if (!restored) setError(err instanceof Error ? err.message : "Discovery history is unavailable.");
     } finally {
       setHistoryLoading(false);
     }
-  }, [clearRememberedRun, loadRun, restoreSnapshot]);
+  }, [clearRememberedRun, getSnapshotRunId, loadRun, restoreSnapshot]);
 
   useEffect(() => { void loadHistory(); }, [loadHistory]);
 
