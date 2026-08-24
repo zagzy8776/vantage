@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MOCK_LEADS } from "@/data/mockData";
 import { OpportunityScore } from "@/components/ui/OpportunityScore";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Card } from "@/components/ui/Card";
@@ -61,58 +60,57 @@ async function loadLead(id: string) {
 
 export default async function LeadDetailPage({ params }: { params: { id: string } }) {
   const record = await loadLead(params.id).catch(() => null);
-  const latestWebsiteAnalyses = record ? await getLatestWebsiteAnalyses(record.businessId).catch(() => []) : [];
-  const intelligenceHistory = record ? await getLeadIntelligenceHistory(record.leadId).catch(() => []) : [];
-  const evidence = record ? await getBusinessEvidence(record.businessId).catch(() => []) : [];
-  const evidenceConflicts = record ? await getBusinessEvidenceConflicts(record.businessId).catch(() => []) : [];
-  const lead = record
-    ? {
-        id: record.leadId,
-        business: {
-          id: record.businessId,
-          name: record.name,
-          category: record.category,
-          location: {
-            country: record.country ?? "Unknown",
-            countryCode: record.country?.slice(0, 2).toUpperCase() ?? "UN",
-            region: record.region,
-            city: record.city ?? "Unknown",
-            area: record.area,
-            street: record.street,
-          },
-          website: record.website,
-          phone: record.phone,
-          discoveredAt: record.discoveredAt.toISOString(),
-        },
-        opportunityScore: record.opportunityScore,
-        websiteHealth: record.websiteStatus,
-        status: record.status,
-        lastAnalyzedAt: null,
-        reason: record.reason,
-        website: null,
-        websiteAnalysis: latestWebsiteAnalyses[0]
-          ? {
-              businessId: record.businessId,
-              url: latestWebsiteAnalyses[0].url,
-              canonicalUrl: latestWebsiteAnalyses[0].url,
-              normalizedUrl: latestWebsiteAnalyses[0].url,
-              status: latestWebsiteAnalyses[0].status,
-              errorCode: latestWebsiteAnalyses[0].errorCode,
-              analyzedAt: latestWebsiteAnalyses[0].analyzedAt.toISOString(),
-              performanceScore: latestWebsiteAnalyses[0].performanceScore,
-              accessibilityScore: latestWebsiteAnalyses[0].accessibilityScore,
-              bestPracticesScore: latestWebsiteAnalyses[0].bestPracticesScore,
-              seoScore: latestWebsiteAnalyses[0].seoScore,
-              reused: true,
-              technicalHealthScore: null,
-              websiteStatus: record.websiteStatus,
-              evidence: { hasWebsite: Boolean(record.website) },
-            }
-          : null,
-      }
-    : MOCK_LEADS.find((l) => l.id === params.id);
+  if (!record) notFound();
 
-  if (!lead) notFound();
+  const latestWebsiteAnalyses = await getLatestWebsiteAnalyses(record.businessId).catch(() => []);
+  const intelligenceHistory = await getLeadIntelligenceHistory(record.leadId).catch(() => []);
+  const evidence = await getBusinessEvidence(record.businessId).catch(() => []);
+  const evidenceConflicts = await getBusinessEvidenceConflicts(record.businessId).catch(() => []);
+
+  const lead = {
+    id: record.leadId,
+    business: {
+      id: record.businessId,
+      name: record.name,
+      category: record.category,
+      location: {
+        country: record.country ?? "Unknown",
+        countryCode: record.country?.slice(0, 2).toUpperCase() ?? "UN",
+        region: record.region,
+        city: record.city ?? "Unknown",
+        area: record.area,
+        street: record.street,
+      },
+      website: record.website,
+      phone: record.phone,
+      discoveredAt: record.discoveredAt.toISOString(),
+    },
+    opportunityScore: record.opportunityScore,
+    websiteHealth: record.websiteStatus,
+    status: record.status,
+    lastAnalyzedAt: intelligenceHistory[0]?.createdAt ?? null,
+    reason: record.reason,
+    website: null,
+    websiteAnalysis: latestWebsiteAnalyses[0]
+      ? {
+          businessId: record.businessId,
+          url: latestWebsiteAnalyses[0].url,
+          canonicalUrl: latestWebsiteAnalyses[0].url,
+          normalizedUrl: latestWebsiteAnalyses[0].url,
+          status: latestWebsiteAnalyses[0].status,
+          errorCode: latestWebsiteAnalyses[0].errorCode,
+          analyzedAt: latestWebsiteAnalyses[0].analyzedAt.toISOString(),
+          performanceScore: latestWebsiteAnalyses[0].performanceScore,
+          accessibilityScore: latestWebsiteAnalyses[0].accessibilityScore,
+          bestPracticesScore: latestWebsiteAnalyses[0].bestPracticesScore,
+          seoScore: latestWebsiteAnalyses[0].seoScore,
+          reused: true,
+          technicalHealthScore: null,
+          websiteStatus: record.websiteStatus,
+          evidence: { hasWebsite: Boolean(record.website) },
+        }
+      : null,
+  };
 
   return (
     <div className="space-y-6">
@@ -152,7 +150,7 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
       </div>
 
       <LeadIntelligencePanel leadId={lead.id} initialScore={lead.opportunityScore} initialIntelligence={intelligenceHistory[0] ?? null} history={intelligenceHistory} />
-      {record && <EvidenceOverview evidence={evidence} conflicts={evidenceConflicts} aiConflicts={intelligenceHistory.flatMap((item) => item.validationIssues.filter((issue) => issue.type === "contradiction"))} verificationStatus={record.verificationStatus} />}
+      <EvidenceOverview evidence={evidence} conflicts={evidenceConflicts} aiConflicts={intelligenceHistory.flatMap((item) => item.validationIssues.filter((issue) => issue.type === "contradiction"))} verificationStatus={record.verificationStatus} />
       <Card title="Outreach" subtitle="Personalized outreach will be available after qualification."><div className="flex items-start justify-between gap-4 flex-col sm:flex-row"><p className="text-sm text-subtle">Reserved for future personalized outreach drafts.</p><Button disabled variant="secondary">Generate Outreach Draft</Button></div></Card>
       <div><Link href="/leads" className="text-xs text-accent hover:underline">← Back to leads</Link></div>
     </div>
