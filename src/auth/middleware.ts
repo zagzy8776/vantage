@@ -28,40 +28,34 @@ function getAnonymousWorkspaceId(request: NextRequest) {
 async function getPublicModeContext(request: NextRequest): Promise<AuthContext | null> {
   if (process.env.VANTAGE_PUBLIC_MODE !== "true") return null;
   const workspaceId = getAnonymousWorkspaceId(request);
-  return {
-    userId: workspaceId,
-    email: `guest+${workspaceId}@vantage.local`,
-    role: "owner",
-    organizationId: undefined,
-    isAnonymous: true,
-  };
+  return { userId: workspaceId, email: `guest+${workspaceId}@vantage.local`, role: "owner", organizationId: undefined, isAnonymous: true };
 }
 
 export async function getAuthContext(request: NextRequest): Promise<AuthContext | null> {
   const token = getSessionToken(request);
   const session = verifySessionToken(token);
 
-  if (session?.sessionId) {
+  if (token) {
+    // A presented but invalid/revoked/deactivated session must never be silently
+    // converted into an anonymous workspace. That could let a signed-out user
+    // continue operating under pilot privileges.
+    if (!session?.sessionId) return null;
     try {
       const record = await getSessionRecord(session.sessionId);
-      if (record && !record.revokedAt && record.isActive && record.userId === session.userId && record.expiresAt > new Date()) {
-        return {
-          userId: record.userId,
-          email: record.email,
-          role: record.role,
-          organizationId: record.organizationId ?? undefined,
-          isAnonymous: false,
-        };
-      }
+      if (!record || record.revokedAt || !record.isActive || record.userId !== session.userId || record.expiresAt <= new Date()) return null;
+      return {
+        userId: record.userId,
+        email: record.email,
+        role: record.role,
+        organizationId: record.organizationId ?? undefined,
+        isAnonymous: false,
+      };
     } catch {
-      // Fail closed for a presented session. Anonymous fallback is allowed only
-      // when public mode is explicitly enabled.
+      return null;
     }
   }
 
-  const publicContext = await getPublicModeContext(request);
-  if (publicContext) return publicContext;
-  return null;
+  return getPublicModeContext(request);
 }
 
 export async function requireAuth(request: NextRequest): Promise<NextResponse | AuthContext> {
@@ -70,15 +64,10 @@ export async function requireAuth(request: NextRequest): Promise<NextResponse | 
   return authContext;
 }
 
-export async function requireRole(
-  request: NextRequest,
-  allowedRoles: UserRole[],
-): Promise<NextResponse | AuthContext> {
+export async function requireRole(request: NextRequest, allowedRoles: UserRole[]): Promise<NextResponse | AuthContext> {
   const authContext = await requireAuth(request);
   if (authContext instanceof NextResponse) return authContext;
-  if (!allowedRoles.includes(authContext.role)) {
-    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
-  }
+  if (!allowedRoles.includes(authContext.role)) return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   return authContext;
 }
 
@@ -89,11 +78,7 @@ function authorize(
   sharedWith: { userId: string; permission: Permission }[],
   requiredPermission: Permission,
 ): NextResponse | null {
-  // Anonymous pilot workspaces are intentionally scoped to themselves and do
-  // not receive the implicit owner/admin global-view escape hatch.
-  if (authContext.isAnonymous && authContext.userId !== resourceOwnerId) {
-    return NextResponse.json({ error: "Access denied to this resource" }, { status: 403 });
-  }
+  if (authContext.isAnonymous && authContext.userId !== resourceOwnerId) return NextResponse.json({ error: "Access denied to this resource" }, { status: 403 });
 
   const user: User = {
     id: authContext.userId,
@@ -108,12 +93,7 @@ function authorize(
 
   const result = checkResourceAccess(user, resourceOwnerId, resourceOrganizationId, sharedWith);
   const permissionLevels: Record<Permission, number> = { none: 0, read: 1, write: 2, admin: 3 };
-  const grantedLevel = permissionLevels[result.permission];
-  const requiredLevel = permissionLevels[requiredPermission];
-
-  if (!result.allowed || grantedLevel < requiredLevel) {
-    return NextResponse.json({ error: "Access denied to this resource" }, { status: 403 });
-  }
+  if (!result.allowed || permissionLevels[result.permission] < permissionLevels[requiredPermission]) return NextResponse.json({ error: "Access denied to this resource" }, { status: 403 });
   return null;
 }
 
@@ -139,22 +119,13 @@ export async function requireInvestigationAccess(
   const authContext = await requireAuth(request);
   if (authContext instanceof NextResponse) return authContext;
 
-  let accessInfo;
   try {
-    accessInfo = await getInvestigationAccessInfo(investigationId);
+    const accessInfo = await getInvestigationAccessInfo(investigationId);
+    if (!accessInfo) return NextResponse.json({ error: "Investigation not found" }, { status: 404 });
+    const denied = authorize(authContext, accessInfo.ownerId, accessInfo.organizationId ?? undefined, accessInfo.sharedWith, requiredPermission);
+    if (denied) return denied;
+    return authContext;
   } catch {
     return NextResponse.json({ error: "Access denied to this resource" }, { status: 403 });
   }
-
-  if (!accessInfo) return NextResponse.json({ error: "Investigation not found" }, { status: 404 });
-
-  const denied = authorize(
-    authContext,
-    accessInfo.ownerId,
-    accessInfo.organizationId ?? undefined,
-    accessInfo.sharedWith,
-    requiredPermission,
-  );
-  if (denied) return denied;
-  return authContext;
 }
