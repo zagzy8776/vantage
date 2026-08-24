@@ -26,22 +26,19 @@ async function executeDiscoveryStep(
 ) {
   "use step";
 
+  const { ensureSearchRunTerminal, releaseSearchRunLock } = await import(
+    "@/services/search-runs/service"
+  );
+
   try {
     const { discoverBusinesses } = await import("@/lib/discover/service");
     await discoverBusinesses(query, runId);
     return { status: "completed" as const };
   } catch (error) {
-    const { ensureSearchRunTerminal, releaseSearchRunLock } = await import(
-      "@/services/search-runs/service"
-    );
-
-    try {
-      await ensureSearchRunTerminal(runId, error);
-    } finally {
-      await releaseSearchRunLock(runId, workerId);
-    }
-
+    await ensureSearchRunTerminal(runId, error);
     throw error;
+  } finally {
+    await releaseSearchRunLock(runId, workerId);
   }
 }
 
