@@ -44,9 +44,6 @@ export async function getAuthContext(request: NextRequest): Promise<AuthContext 
   if (session?.sessionId) {
     try {
       const record = await getSessionRecord(session.sessionId);
-      // The signed token proves possession of the session secret; the DB record
-      // proves that this exact session is still active and reflects the user's
-      // current role/org. Never trust stale role or identity claims from a token.
       if (record && !record.revokedAt && record.isActive && record.userId === session.userId && record.expiresAt > new Date()) {
         return {
           userId: record.userId,
@@ -92,6 +89,12 @@ function authorize(
   sharedWith: { userId: string; permission: Permission }[],
   requiredPermission: Permission,
 ): NextResponse | null {
+  // Anonymous pilot workspaces are intentionally scoped to themselves and do
+  // not receive the implicit owner/admin global-view escape hatch.
+  if (authContext.isAnonymous && authContext.userId !== resourceOwnerId) {
+    return NextResponse.json({ error: "Access denied to this resource" }, { status: 403 });
+  }
+
   const user: User = {
     id: authContext.userId,
     email: authContext.email,
@@ -100,14 +103,8 @@ function authorize(
     organizationId: authContext.organizationId,
     createdAt: new Date(),
     updatedAt: new Date(),
-    isActive: !authContext.isAnonymous,
+    isActive: true,
   };
-
-  // Anonymous pilot workspaces are intentionally scoped to themselves and do
-  // not receive the implicit owner/admin global-view escape hatch.
-  if (authContext.isAnonymous && authContext.userId !== resourceOwnerId) {
-    return NextResponse.json({ error: "Access denied to this resource" }, { status: 403 });
-  }
 
   const result = checkResourceAccess(user, resourceOwnerId, resourceOrganizationId, sharedWith);
   const permissionLevels: Record<Permission, number> = { none: 0, read: 1, write: 2, admin: 3 };
