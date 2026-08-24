@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateDiscoveryQuery } from "@/lib/discover/validation";
 import { createSearchRun } from "@/services/search-runs/service";
+import { recordSearchRunOwner } from "@/services/search-runs/access";
 import { requireRole } from "@/auth/middleware";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,12 @@ export async function POST(request: NextRequest) {
     }
 
     const runId = await createSearchRun(validation.query);
+    await recordSearchRunOwner({
+      searchRunId: runId,
+      ownerId: auth.userId,
+      organizationId: auth.organizationId,
+    });
+
     return NextResponse.json({ runId, status: "queued" }, { status: 202 });
   } catch (error) {
     if (error instanceof Error && error.message.includes("DATABASE_URL")) {
