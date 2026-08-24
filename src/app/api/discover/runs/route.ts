@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
  * GET /api/discover/runs
  *
  * Returns persisted discovery history scoped to the authenticated user's
- * account/organization. Legacy ownerless runs are visible only to platform
- * owners so old data cannot leak across customer accounts.
+ * account/organization. Only the platform owner (the owner account without
+ * an organization) may inspect legacy ownerless data.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
@@ -21,8 +21,9 @@ export async function GET(request: NextRequest) {
   try {
     const rawLimit = Number(new URL(request.url).searchParams.get("limit") ?? 20);
     const limit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 20, 50));
+    const platformOwner = auth.role === "owner" && !auth.organizationId;
 
-    const visibility = auth.role === "owner"
+    const visibility = platformOwner
       ? undefined
       : or(
           eq(searchRunAccess.ownerId, auth.userId),
