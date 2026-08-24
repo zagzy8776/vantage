@@ -1,20 +1,25 @@
 /**
- * Search Run recovery worker - the durable handoff for Vercel serverless.
+ * Search Run recovery coordinator for serverless deployments.
  *
- * The Discover endpoint persists a Search Run and returns immediately (no
- * fire-and-forget promise, which a serverless request would kill). A scheduled
- * sweep endpoint calls recoverOrphanedSearchRuns(), which resumes active runs
- * through the existing discovery engine so they always reach a terminal state.
+ * The recovery endpoint must stay short-lived. It only claims orphaned runs
+ * and starts a durable Vercel Workflow. The workflow owns the long-running
+ * discovery work, so the cron request never waits on provider APIs.
  *
  * Idempotency / duplicate prevention:
  *  - Only active (queued/created/running) runs are claimed.
- *  - Terminal runs (completed/completed_with_errors/failed) are never resumed.
+ *  - Terminal runs are never resumed.
  *  - Each run is claimed atomically with a stale lock.
- *  - discoverBusinesses() is the same engine used by the original request.
+ *  - A successful claim creates exactly one durable workflow attempt.
+ *  - The workflow releases the lock on completion/failure.
  */
 
-import { claimSearchRunForRecovery, listRecoverableSearchRuns, discoveryQueryFromSearchRun } from "./service";
-import { discoverBusinesses } from "@/lib/discover/service";
+import { start } from "workflow/api";
+import {
+  claimSearchRunForRecovery,
+  discoveryQueryFromSearchRun,
+  listRecoverableSearchRuns,
+} from "./service";
+import { discoveryRecoveryWorkflow } from "@/workflows/discovery-recovery";
 
 export const SEARCH_RUN_STALE_LOCK_MS = 10 * 60_000;
 
@@ -53,31 +58,57 @@ export async function recoverOrphanedSearchRuns(opts: {
     durationMs: 0,
   };
 
-  const candidates = await listRecoverableSearchRuns({ staleLockMs, limit: maxRuns });
+  const candidates = await listRecoverableSearchRuns({
+    staleLockMs,
+    limit: maxRuns,
+  });
   report.examined = candidates.length;
 
   for (const run of candidates) {
-    if (isTerminalRun(run.status)) {
+    if (["completed", "completed_with_errors", "failed"].includes(run.status)) {
       report.skippedAlreadyTerminal.push(run.id);
       continue;
     }
-    if (!(await claimSearchRunForRecovery(run.id, worker, staleLockMs))) continue;
 
-    const query = discoveryQueryFromSearchRun(run);
+    if (!(await claimSearchRunForRecovery(run.id, worker, staleLockMs))) {
+      continue;
+    }
+
     try {
-      await discoverBusinesses(query, run.id);
+      const query = discoveryQueryFromSearchRun(run);
+      const workflowRun = await start(discoveryRecoveryWorkflow, [
+        query,
+        run.id,
+        worker,
+      ]);
       report.recovered.push(run.id);
+      console.info(
+        JSON.stringify({
+          diagnostic: "search_run_workflow_started",
+          runId: run.id,
+          workflowRunId: workflowRun.runId,
+          worker,
+        }),
+      );
     } catch (error) {
       report.failed.push(run.id);
-      report.errors.push(error instanceof Error ? error.message : String(error));
+      report.errors.push(
+        error instanceof Error ? error.message : String(error),
+      );
+      // If workflow scheduling itself fails, leave the run recoverable. The
+      // next external sweep can claim it again after the stale-lock window.
+      console.error(
+        JSON.stringify({
+          diagnostic: "search_run_workflow_start_failed",
+          runId: run.id,
+          worker,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   }
 
   report.durationMs = Date.now() - startedAt;
   console.info(JSON.stringify({ diagnostic: "search_run_recovery", ...report }));
   return report;
-}
-
-function isTerminalRun(status: string | null): boolean {
-  return status === "completed" || status === "completed_with_errors" || status === "failed";
 }
