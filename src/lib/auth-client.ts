@@ -73,6 +73,7 @@ export interface SignUpResult {
   ok: boolean;
   error?: string;
   testOnlyCode?: string;
+  authenticated?: boolean;
 }
 
 export async function signUp(input: {
@@ -87,7 +88,13 @@ export async function signUp(input: {
     body: JSON.stringify(input),
   });
   const payload = await response.json().catch(() => null);
-  if (response.ok && payload?.ok) return { ok: true, testOnlyCode: payload.testOnlyCode };
+  if (response.ok && payload?.ok) {
+    return {
+      ok: true,
+      testOnlyCode: payload.testOnlyCode,
+      authenticated: payload.authenticated === true,
+    };
+  }
   if (response.status === 429) return { ok: false, error: payload?.error ?? "Too many attempts. Please try again later." };
   if (response.status >= 400 && response.status < 500) return { ok: false, error: payload?.error ?? "Please check your details and try again." };
   if (response.status === 503) {
