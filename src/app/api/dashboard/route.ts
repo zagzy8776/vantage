@@ -6,30 +6,30 @@ import { requireAuth } from "@/auth/middleware";
 
 export const dynamic = "force-dynamic";
 
+function tenantVisibility(auth: { userId: string; organizationId?: string }) {
+  return auth.organizationId
+    ? sql`(sra.owner_id = ${auth.userId} OR sra.organization_id = ${auth.organizationId})`
+    : sql`sra.owner_id = ${auth.userId}`;
+}
+
 function visibleBusinessExists(auth: { userId: string; organizationId?: string }) {
-  const organizationId = auth.organizationId ?? null;
+  const visibility = tenantVisibility(auth);
   return sql`EXISTS (
     SELECT 1
     FROM search_run_businesses srb
     INNER JOIN search_run_access sra ON sra.search_run_id = srb.search_run_id
     WHERE srb.business_id = businesses.id
-      AND (
-        sra.owner_id = ${auth.userId}
-        OR (${organizationId} IS NOT NULL AND sra.organization_id = ${organizationId})
-      )
+      AND ${visibility}
   )`;
 }
 
 function visibleRunExists(auth: { userId: string; organizationId?: string }) {
-  const organizationId = auth.organizationId ?? null;
+  const visibility = tenantVisibility(auth);
   return sql`EXISTS (
     SELECT 1
     FROM search_run_access sra
     WHERE sra.search_run_id = search_runs.id
-      AND (
-        sra.owner_id = ${auth.userId}
-        OR (${organizationId} IS NOT NULL AND sra.organization_id = ${organizationId})
-      )
+      AND ${visibility}
   )`;
 }
 
@@ -45,14 +45,24 @@ export async function GET(request: NextRequest) {
     const [[businessCount], [websiteCount], [highOpportunityCount], [activeScanCount], stageRows, topRows] = await Promise.all([
       db.select({ value: count() }).from(businesses).where(visibleBusiness),
       db.select({ value: count() }).from(websiteAnalyses).where(sql`EXISTS (
-        SELECT 1 FROM search_run_businesses srb
+        SELECT 1
+        FROM search_run_businesses srb
         INNER JOIN search_run_access sra ON sra.search_run_id = srb.search_run_id
         WHERE srb.business_id = ${websiteAnalyses.businessId}
-          AND (sra.owner_id = ${auth.userId} OR (${auth.organizationId ?? null} IS NOT NULL AND sra.organization_id = ${auth.organizationId ?? null}))
+          AND ${tenantVisibility(auth)}
       )`),
-      db.select({ value: count() }).from(leads).innerJoin(businesses, eq(leads.businessId, businesses.id)).where(sql`${visibleBusiness} AND ${gt(leads.opportunityScore, 79)}`),
-      db.select({ value: count() }).from(searchRuns).where(sql`${visibleRun} AND ${sql`${searchRuns.status} IN ('queued','created','running')`}`),
-      db.select({ status: leads.status, value: count() }).from(leads).innerJoin(businesses, eq(leads.businessId, businesses.id)).where(visibleBusiness).groupBy(leads.status),
+      db.select({ value: count() })
+        .from(leads)
+        .innerJoin(businesses, eq(leads.businessId, businesses.id))
+        .where(sql`${visibleBusiness} AND ${gt(leads.opportunityScore, 79)}`),
+      db.select({ value: count() })
+        .from(searchRuns)
+        .where(sql`${visibleRun} AND ${searchRuns.status} IN ('queued','created','running')`),
+      db.select({ status: leads.status, value: count() })
+        .from(leads)
+        .innerJoin(businesses, eq(leads.businessId, businesses.id))
+        .where(visibleBusiness)
+        .groupBy(leads.status),
       db.select({
         id: leads.id,
         businessId: businesses.id,
@@ -64,7 +74,12 @@ export async function GET(request: NextRequest) {
         opportunityScore: leads.opportunityScore,
         status: leads.status,
         websiteStatus: leads.websiteStatus,
-      }).from(leads).innerJoin(businesses, eq(leads.businessId, businesses.id)).where(sql`${visibleBusiness} AND ${gt(leads.opportunityScore, 79)}`).orderBy(desc(leads.opportunityScore)).limit(8),
+      })
+        .from(leads)
+        .innerJoin(businesses, eq(leads.businessId, businesses.id))
+        .where(sql`${visibleBusiness} AND ${gt(leads.opportunityScore, 79)}`)
+        .orderBy(desc(leads.opportunityScore))
+        .limit(8),
     ]);
 
     return NextResponse.json({
