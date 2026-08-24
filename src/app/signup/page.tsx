@@ -31,20 +31,14 @@ function SignupForm() {
 
     setIsSubmitting(true);
     try {
-      const result = await signUp({
-        name: name.trim(),
-        email: email.trim(),
-        password,
-        confirmPassword,
-      });
+      const result = await signUp({ name: name.trim(), email: email.trim(), password, confirmPassword });
       if (!result.ok) {
         setFormError(result.error ?? "Please check your details and try again.");
         return;
       }
       const params = new URLSearchParams({ email: email.trim() });
-      if (result.devOnlyCode) params.set("dev", result.devOnlyCode);
+      if (result.testOnlyCode) params.set("test", result.testOnlyCode);
       router.push(`/verify-email?${params.toString()}`);
-
     } catch {
       setFormError("Sign up is temporarily unavailable. Please try again.");
     } finally {
@@ -65,45 +59,26 @@ function SignupForm() {
 
         <div className="border border-border rounded-lg bg-surface p-6 shadow-sm">
           <div className="grid grid-cols-2 mb-5 border border-border rounded-md overflow-hidden text-xs font-mono uppercase tracking-wide">
-            <Link href="/login" className="py-2 text-center text-subtle hover:text-foreground hover:bg-surface-2/60 transition-colors">
-              Sign In
-            </Link>
-            <span className="py-2 text-center bg-accent/10 text-accent font-semibold border-l border-border">
-              Sign Up
-            </span>
+            <Link href="/login" className="py-2 text-center text-subtle hover:text-foreground hover:bg-surface-2/60 transition-colors">Sign In</Link>
+            <span className="py-2 text-center bg-accent/10 text-accent font-semibold border-l border-border">Sign Up</span>
           </div>
 
           <h2 className="text-sm font-bold text-foreground mb-1">Create your workspace</h2>
-          <p className="text-xs text-subtle mb-5">
-            We&apos;ll email you a verification code to activate your account.
-          </p>
+          <p className="text-xs text-subtle mb-5">We&apos;ll email you a verification code to activate your account.</p>
 
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <Input label="Full name" type="text" name="name" autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Founder" maxLength={100} disabled={isSubmitting} />
             <Input label="Email" type="email" name="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" disabled={isSubmitting} />
             <Input label="Password" type="password" name="new-password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" hint="At least 8 characters with upper, lower and a number." disabled={isSubmitting} />
             <Input label="Confirm password" type="password" name="confirm-password" autoComplete="new-password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" error={confirmPassword.length > 0 && password !== confirmPassword ? "Passwords do not match." : undefined} disabled={isSubmitting} />
-            {formError && (
-              <p role="alert" className="text-xs text-danger border border-danger/30 bg-danger/5 rounded-md px-3 py-2">
-                {formError}
-              </p>
-            )}
-            <Button type="submit" size="lg" isLoading={isSubmitting} className="w-full">
-              Create Account
-            </Button>
+            {formError && <p role="alert" className="text-xs text-danger border border-danger/30 bg-danger/5 rounded-md px-3 py-2">{formError}</p>}
+            <Button type="submit" size="lg" isLoading={isSubmitting} className="w-full">Create Account</Button>
           </form>
 
-          <p className="text-[11px] text-subtle mt-4 text-center">
-            Already have an account?{" "}
-            <Link href="/login" className="text-accent hover:underline">
-              Sign in
-            </Link>
-          </p>
+          <p className="text-[11px] text-subtle mt-4 text-center">Already have an account? <Link href="/login" className="text-accent hover:underline">Sign in</Link></p>
         </div>
 
-        <p className="text-center text-[10px] font-mono text-subtle mt-6">
-          VANTAGE · Secure session · HttpOnly cookie
-        </p>
+        <p className="text-center text-[10px] font-mono text-subtle mt-6">VANTAGE · Secure session · HttpOnly cookie</p>
       </div>
     </main>
   );
@@ -111,16 +86,7 @@ function SignupForm() {
 
 export default function SignupPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center p-6">
-          <svg className="animate-spin h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center p-6"><svg className="animate-spin h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg></div>}>
       <SignupForm />
     </Suspense>
   );
