@@ -150,8 +150,8 @@ export default function DiscoverPage() {
       const history = (payload?.runs ?? []) as SearchRun[];
       setRuns(history);
 
-      const queryRunId = typeof window !== "undefined'" ? new URL(window.location.href).searchParams.get("runId") : null;
-      const storedRunId = typeof window !== "undefined'" ? window.sessionStorage.getItem(LAST_RUN_STORAGE_KEY) : null;
+      const queryRunId = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("runId") : null;
+      const storedRunId = typeof window !== "undefined" ? window.sessionStorage.getItem(LAST_RUN_STORAGE_KEY) : null;
       const preferredRunId = queryRunId ?? storedRunId;
       const preferredRun = preferredRunId ? history.find((run) => run.id === preferredRunId) : undefined;
 
