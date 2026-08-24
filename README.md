@@ -37,18 +37,6 @@ Executions are **durable**: an investigation is triggered by an API call but doe
 - **Researcher marketplace** — human-in-the-loop research tasks with submission validation and mandatory human review of AI-flagged content
 - **Auth & tenancy** — signed session tokens with server-side revocation, role-based access control, organization-level isolation (IDOR-tested)
 
-## Tech stack
-
-| Layer | Choice |
-|---|---|
-| Framework | Next.js 14 (App Router) + React 18 |
-| Language | TypeScript (strict) |
-| Database | PostgreSQL on Neon, serverless driver |
-| ORM / migrations | Drizzle ORM |
-| Styling | Tailwind CSS |
-| Testing | Vitest |
-| Linting | ESLint (`--max-warnings=0`) |
-
 ## Quality gates
 
 Every change passes all four:
@@ -78,7 +66,7 @@ All environment variables are server-only. See `.env.example` for the full annot
 
 ```
 src/
-├── app/            Next.js App Router — pages + 36 API routes
+├── app/            Next.js App Router — pages + API routes
 ├── auth/           Sessions, tokens, RBAC, tenant-isolation tests
 ├── components/     UI panels (investigations, collaboration, marketplace)
 ├── lib/            DB client, security (rate limiting, CSRF, secrets, sanitizers)
@@ -99,6 +87,8 @@ docs/               Engineering documentation
 ## Status
 
 Active development. Core investigation pipeline, collaboration, reporting, and marketplace are implemented and tested; production hardening (observability, distributed rate limiting, billing) is in progress.
+
+**Billing enforcement is disabled until billing launches.** The research-credit infrastructure remains in place for the launch configuration.
 
 ## License
 
