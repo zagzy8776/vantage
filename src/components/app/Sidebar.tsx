@@ -16,13 +16,13 @@ export interface SidebarProps {
 
 const NAV = [
   { label: "Overview", href: "/", icon: "M4 6h6v6H4zm10 0h6v6h-6zM4 16h6v6H4zm10 0h6v6h-6z" },
-  { label: "Discover", href: "/discover", badge: "Search", icon: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" },
+  { label: "Discover", href: "/discover", badge: "Research", icon: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" },
   { label: "Investigations", href: "/investigations", badge: "Workspace", icon: "M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h7" },
-  { label: "Leads", href: "/leads", badge: "10", icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2" },
+  { label: "Leads", href: "/leads", icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2" },
   { label: "Intelligence", href: "/intelligence", icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10" },
-  { label: "Automations", href: "/automations", badge: "14", icon: "M13 10V3L4 14h7v7l9-11h-7z" },
+  { label: "Automations", href: "/automations", icon: "M13 10V3L4 14h7v7l9-11h-7z" },
   { label: "AI Providers", href: "/providers", icon: "M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158" },
-  { label: "Sources", href: "/sources", icon: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4" },
+  { label: "Sources", href: "/sources", icon: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" },
   { label: "Settings", href: "/settings", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94" },
 ];
 
@@ -41,16 +41,16 @@ export function Sidebar({ isCollapsed, onToggleCollapse, isMobileOpen, onMobileC
             {!isCollapsed && (
               <div className="flex flex-col min-w-0">
                 <span className="font-extrabold tracking-widest text-foreground text-sm font-mono leading-none">VANTAGE</span>
-                <span className="text-[10px] uppercase font-mono text-accent mt-0.5">Lead Intelligence</span>
+                <span className="text-[10px] uppercase font-mono text-accent mt-0.5">Research Intelligence</span>
               </div>
             )}
           </Link>
-          <button onClick={onToggleCollapse} className="hidden lg:flex p-1 rounded hover:bg-surface-2 text-subtle hover:text-foreground shrink-0">
+          <button onClick={onToggleCollapse} className="hidden lg:flex p-1 rounded hover:bg-surface-2 text-subtle hover:text-foreground shrink-0" aria-label={isCollapsed ? "Expand navigation" : "Collapse navigation"}>
             <svg className={cn("w-4 h-4 transition-transform", isCollapsed && "rotate-180")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-2 space-y-1 no-scrollbar">
+        <nav className="flex-1 overflow-y-auto p-2 space-y-1 no-scrollbar" aria-label="Primary navigation">
           {NAV.map((item) => {
             const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
@@ -65,10 +65,10 @@ export function Sidebar({ isCollapsed, onToggleCollapse, isMobileOpen, onMobileC
 
         <div className="p-2 border-t border-border space-y-2 shrink-0 bg-surface-2/20">
           <div className={cn("rounded border border-border/80 p-2 flex items-center gap-2 bg-surface-2/50", isCollapsed && "justify-center px-1")}>
-            <span className="relative flex h-2 w-2 shrink-0"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span></span>
-            {!isCollapsed && <div className="flex flex-col min-w-0 flex-1"><span className="text-[10px] font-mono font-medium text-foreground leading-none">SYSTEM READY</span><span className="text-[9px] font-mono text-subtle truncate mt-0.5">Phase 1 • Mock Engine</span></div>}
+            <span className="relative flex h-2 w-2 shrink-0"><span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span></span>
+            {!isCollapsed && <div className="flex flex-col min-w-0 flex-1"><span className="text-[10px] font-mono font-medium text-foreground leading-none">RESEARCH SYSTEM READY</span><span className="text-[9px] font-mono text-subtle truncate mt-0.5">Durable research worker</span></div>}
           </div>
-          <div className={cn("flex items-center gap-2.5 p-1.5 rounded-md border border-transparent hover:border-border hover:bg-surface-2 transition-all cursor-pointer", isCollapsed && "justify-center p-1")}>
+          <Link href="/settings" onClick={onMobileClose} className={cn("flex items-center gap-2.5 p-1.5 rounded-md border border-transparent hover:border-border hover:bg-surface-2 transition-all", isCollapsed && "justify-center p-1")}>
             <div className="w-7 h-7 rounded-full bg-surface-2 border border-border-strong text-accent flex items-center justify-center font-mono font-bold text-xs shrink-0 uppercase">
               {user ? getUserInitials(user) : "··"}
             </div>
@@ -78,7 +78,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse, isMobileOpen, onMobileC
                 <span className="text-[10px] text-subtle truncate mt-0.5 capitalize">{user.role}{user.organizationId ? " · Team" : " · Personal"}</span>
               </div>
             )}
-          </div>
+          </Link>
         </div>
       </aside>
     </>
