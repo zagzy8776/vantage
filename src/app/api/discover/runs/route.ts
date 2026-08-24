@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { desc, eq, or } from "drizzle-orm";
-import { start } from "workflow/api";
 import { getDb } from "@/lib/db";
 import { searchRuns } from "@/lib/db/schema";
 import { searchRunAccess } from "@/services/search-runs/access";
-import { claimSearchRunForRecovery, releaseSearchRunLock } from "@/services/search-runs/service";
-import { discoveryQueryFromSearchRun } from "@/services/search-runs/service";
-import { discoveryRecoveryWorkflow } from "@/workflows/discovery-recovery";
 import { requireAuth } from "@/auth/middleware";
 
 export const dynamic = "force-dynamic";
-
-function newHistoryWorkerId() {
-  return `history_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
@@ -47,8 +39,6 @@ export async function GET(request: NextRequest) {
         completedAt: searchRuns.completedAt,
         stages: searchRuns.stages,
         result: searchRuns.result,
-        workerId: searchRuns.workerId,
-        lockAcquiredAt: searchRuns.lockAcquiredAt,
       })
       .from(searchRuns)
       .innerJoin(searchRunAccess, eq(searchRunAccess.searchRunId, searchRuns.id))
@@ -56,27 +46,9 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(searchRuns.createdAt))
       .limit(limit);
 
-    // A scan must not depend on the customer manually waiting for an external
-    // cron. If a visible run is still active and its worker lock is stale/missing,
-    // recover it immediately from the history request.
-    const recoveryWorker = newHistoryWorkerId();
-    const staleBoundary = Date.now() - 10 * 60_000;
-    for (const run of runs.filter((item) => ["queued", "created", "running"].includes(item.status)).slice(0, 2)) {
-      const lockTime = run.lockAcquiredAt ? new Date(run.lockAcquiredAt).getTime() : null;
-      if (lockTime !== null && lockTime >= staleBoundary) continue;
-
-      const claimed = await claimSearchRunForRecovery(run.id, recoveryWorker, 10 * 60_000).catch(() => false);
-      if (!claimed) continue;
-
-      try {
-        const query = discoveryQueryFromSearchRun(run as typeof searchRuns.$inferSelect);
-        await start(discoveryRecoveryWorkflow, [query, run.id, recoveryWorker]);
-      } catch (error) {
-        await releaseSearchRunLock(run.id, recoveryWorker).catch(() => undefined);
-        console.error(JSON.stringify({ diagnostic: "history_recovery_failed", runId: run.id, error: error instanceof Error ? error.message : String(error) }));
-      }
-    }
-
+    // History is a read-only endpoint. It must never trigger a provider call,
+    // launch a workflow, consume a research credit, or recover a stale run.
+    // Recovery is handled by the discovery workflow/external sweep path.
     return NextResponse.json({ runs }, {
       status: 200,
       headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
