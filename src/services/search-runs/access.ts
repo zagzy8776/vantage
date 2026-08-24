@@ -1,10 +1,9 @@
 import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { searchRunAccess } from "@/lib/db/schema";
 import type { AuthContext } from "@/auth/types";
 
-// Keep the table export available to the discovery history route while using
-// the canonical schema definition for migrations and runtime queries.
 export { searchRunAccess } from "@/lib/db/schema";
 
 export async function recordSearchRunOwner(input: {
@@ -27,24 +26,37 @@ export async function getSearchRunOwner(searchRunId: string) {
     .limit(1))[0] ?? null;
 }
 
-/**
- * Search results are private research assets.
- *
- * A missing access row means the run is legacy/unowned data. It must not be
- * exposed to customers, including the platform owner, because doing so makes
- * old/demo searches appear in a fresh workspace. Legacy data can be inspected
- * through an explicit internal migration/admin path instead of normal customer
- * discovery history.
- */
+export async function getSearchWorkspaceId(searchRunId: string): Promise<string | null> {
+  const row = await getSearchRunOwner(searchRunId);
+  return row?.ownerId ?? null;
+}
+
 export async function canAccessSearchRun(searchRunId: string, auth: AuthContext): Promise<boolean> {
   const access = await getSearchRunOwner(searchRunId);
   if (!access) return false;
-
   if (access.ownerId === auth.userId) return true;
-
   if (access.organizationId && access.organizationId === auth.organizationId) {
     return ["owner", "admin", "analyst", "reviewer", "client"].includes(auth.role);
   }
-
   return false;
+}
+
+/**
+ * A business is customer-visible only when it has been attached to at least
+ * one search run that this customer can access. Global business records remain
+ * shared internally, but customer APIs never expose them without this scope.
+ */
+export async function canAccessBusiness(businessId: string, auth: AuthContext): Promise<boolean> {
+  const result = await getDb().execute(sql`
+    SELECT 1
+    FROM search_run_businesses srb
+    INNER JOIN search_run_access sra ON sra.search_run_id = srb.search_run_id
+    WHERE srb.business_id = ${businessId}
+      AND (
+        sra.owner_id = ${auth.userId}
+        OR (${auth.organizationId ?? null} IS NOT NULL AND sra.organization_id = ${auth.organizationId ?? null})
+      )
+    LIMIT 1
+  `);
+  return result.rows.length > 0;
 }
