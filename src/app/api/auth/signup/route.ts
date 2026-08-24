@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { findUserByEmail, createUser } from "@/auth/user-store";
+import { findUserByEmail, createUser, updatePendingSignupUser } from "@/auth/user-store";
 import { hashPassword } from "@/auth/password";
 import { validateSignupInput } from "@/auth/signup-validation";
 import {
@@ -84,6 +84,7 @@ export async function POST(request: NextRequest) {
     const email = String(body.email).trim().toLowerCase();
     const name = String(body.name).trim();
     const password = String(body.password);
+    const passwordHash = await hashPassword(password);
     const temporaryAuthMode = isTemporaryAuthModeEnabled();
 
     const existing = await findUserByEmail(email);
@@ -93,11 +94,16 @@ export async function POST(request: NextRequest) {
     let userId: string;
     if (existing && !existing.emailVerified) {
       userId = existing.id;
+      await updatePendingSignupUser({
+        userId,
+        name,
+        passwordHash,
+      });
     } else {
       const created = await createUser({
         email,
         name,
-        passwordHash: await hashPassword(password),
+        passwordHash,
         role: "analyst",
         organizationId: null,
         emailVerified: false,
