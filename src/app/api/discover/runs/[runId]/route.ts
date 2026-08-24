@@ -8,10 +8,31 @@ export const dynamic = "force-dynamic";
 
 function customerResult(result: Record<string, unknown> | null) {
   if (!result) return null;
+
+  const rawResults = Array.isArray(result.results) ? result.results : [];
+  const results = rawResults.map((item, index) => {
+    if (!item || typeof item !== "object") return { name: `Research result ${index + 1}` };
+    const business = item as Record<string, unknown>;
+    return {
+      externalId: `result_${index + 1}`,
+      source: "web",
+      name: typeof business.name === "string" ? business.name : `Research result ${index + 1}`,
+      category: typeof business.category === "string" ? business.category : undefined,
+      country: typeof business.country === "string" ? business.country : undefined,
+      region: typeof business.region === "string" ? business.region : undefined,
+      city: typeof business.city === "string" ? business.city : undefined,
+      area: typeof business.area === "string" ? business.area : undefined,
+      street: typeof business.street === "string" ? business.street : undefined,
+      website: typeof business.website === "string" ? business.website : undefined,
+      phone: typeof business.phone === "string" ? business.phone : undefined,
+      rating: typeof business.rating === "number" ? business.rating : undefined,
+      reviewCount: typeof business.reviewCount === "number" ? business.reviewCount : undefined,
+    };
+  });
+
   return {
-    results: Array.isArray(result.results) ? result.results : [],
+    results,
     storedIds: Array.isArray(result.storedIds) ? result.storedIds : [],
-    resultSources: Array.isArray(result.resultSources) ? result.resultSources : [],
     totalUniqueResults: typeof result.totalUniqueResults === "number" ? result.totalUniqueResults : undefined,
     workflow: result.workflow && typeof result.workflow === "object"
       ? { stage: (result.workflow as { stage?: unknown }).stage }
@@ -32,8 +53,6 @@ export async function GET(request: NextRequest, context: { params: { runId: stri
       return NextResponse.json({ error: "Search run not found." }, { status: 404 });
     }
 
-    // Keep customer-facing progress useful while hiding provider names,
-    // diagnostics, fallback details and cost information.
     return NextResponse.json({
       runId: run.id,
       query: run.query,
@@ -48,7 +67,10 @@ export async function GET(request: NextRequest, context: { params: { runId: stri
       startedAt: run.startedAt ?? run.createdAt,
       completedAt: run.completedAt,
       durationMs: run.durationMs,
-      stages: run.stages ?? {},
+      stages: Object.fromEntries(
+        Object.entries((run.stages ?? {}) as Record<string, { status?: string }>)
+          .map(([stage, value]) => [stage, { status: value?.status }]),
+      ),
       result: customerResult(run.result),
       summary: {
         discovered: run.discoveredCount,
