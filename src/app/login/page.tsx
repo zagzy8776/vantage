@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/Button";
 import {
   fetchCurrentUser,
   login,
-  resendVerification,
   resolveSafeRedirect,
 } from "@/lib/auth-client";
 
@@ -20,9 +19,7 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isResending, setIsResending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
 
   useEffect(() => {
@@ -53,8 +50,7 @@ function LoginForm() {
       const result = await login(trimmedEmail, password);
       if (!result.ok) {
         if (result.needsVerification && result.email) {
-          setUnverifiedEmail(result.email);
-          setFormError(null);
+          router.push(`/verify-email?email=${encodeURIComponent(result.email)}&from=login`);
           return;
         }
         setFormError(result.error ?? "Invalid email or password.");
@@ -68,61 +64,13 @@ function LoginForm() {
     }
   };
 
-  const resendCurrentEmail = async () => {
-    const targetEmail = (unverifiedEmail ?? email).trim().toLowerCase();
-    if (!targetEmail) {
-      setFormError("Enter your email address first.");
-      return;
-    }
-
-    setIsResending(true);
-    setFormError(null);
-    try {
-      const result = await resendVerification(targetEmail);
-      if (!result.ok) {
-        setFormError(result.error ?? "Could not resend the verification code right now.");
-        return;
-      }
-      router.push(`/verify-email?email=${encodeURIComponent(targetEmail)}`);
-    } catch {
-      setFormError("Could not resend the verification code right now.");
-    } finally {
-      setIsResending(false);
-    }
-  };
-
   if (isCheckingSession) {
     return (
       <div className="flex items-center justify-center py-16">
         <svg className="animate-spin h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 5.373 0 0 12 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
         </svg>
-      </div>
-    );
-  }
-
-  if (unverifiedEmail) {
-    return (
-      <div className="space-y-4">
-        <h2 className="text-sm font-bold text-foreground mb-1">Verify your email</h2>
-        <p className="text-xs text-subtle">
-          Your account is not verified yet. Send a fresh 6-digit verification code to continue.
-        </p>
-        <p className="text-xs font-mono text-accent">{unverifiedEmail}</p>
-        <Button size="lg" isLoading={isResending} onClick={() => void resendCurrentEmail()} className="w-full">
-          Send verification code
-        </Button>
-        <button
-          type="button"
-          onClick={() => {
-            setUnverifiedEmail(null);
-            setFormError(null);
-          }}
-          className="w-full text-[11px] text-subtle hover:text-foreground transition-colors"
-        >
-          Back to sign in
-        </button>
       </div>
     );
   }
@@ -139,7 +87,7 @@ function LoginForm() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder="you@company.com"
-        disabled={isSubmitting || isResending}
+        disabled={isSubmitting}
       />
       <Input
         label="Password"
@@ -150,24 +98,12 @@ function LoginForm() {
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder="••••••••"
-        disabled={isSubmitting || isResending}
+        disabled={isSubmitting}
       />
       {formError && (
-        <div className="space-y-2">
-          <p role="alert" className="text-xs text-danger border border-danger/30 bg-danger/5 rounded-md px-3 py-2">
-            {formError}
-          </p>
-          {email.trim() && (
-            <button
-              type="button"
-              onClick={() => void resendCurrentEmail()}
-              disabled={isResending}
-              className="w-full text-xs text-accent hover:underline disabled:opacity-50"
-            >
-              Didn&apos;t receive a verification code? Send one
-            </button>
-          )}
-        </div>
+        <p role="alert" className="text-xs text-danger border border-danger/30 bg-danger/5 rounded-md px-3 py-2">
+          {formError}
+        </p>
       )}
       <Button type="submit" size="lg" isLoading={isSubmitting} className="w-full">
         Sign In
@@ -208,7 +144,7 @@ export default function LoginPage() {
               <div className="flex items-center justify-center py-16">
                 <svg className="animate-spin h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 5.373 0 0 12 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
               </div>
             }
