@@ -28,19 +28,23 @@ export async function getSearchRunOwner(searchRunId: string) {
 }
 
 /**
- * A platform owner is the only account without an organization and may inspect
- * legacy/unowned data. A normal organization owner is still tenant-scoped.
+ * Search results are private research assets.
+ *
+ * A missing access row means the run is legacy/unowned data. It must not be
+ * exposed to customers, including the platform owner, because doing so makes
+ * old/demo searches appear in a fresh workspace. Legacy data can be inspected
+ * through an explicit internal migration/admin path instead of normal customer
+ * discovery history.
  */
-function isPlatformOwner(auth: AuthContext): boolean {
-  return auth.role === "owner" && !auth.organizationId;
-}
-
 export async function canAccessSearchRun(searchRunId: string, auth: AuthContext): Promise<boolean> {
   const access = await getSearchRunOwner(searchRunId);
-  if (!access) return isPlatformOwner(auth);
+  if (!access) return false;
+
   if (access.ownerId === auth.userId) return true;
+
   if (access.organizationId && access.organizationId === auth.organizationId) {
     return ["owner", "admin", "analyst", "reviewer", "client"].includes(auth.role);
   }
-  return isPlatformOwner(auth);
+
+  return false;
 }
