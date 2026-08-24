@@ -116,6 +116,30 @@ export async function createUser(input: {
 }
 
 /**
+ * Replace the identity/credentials of an unfinished signup.
+ *
+ * A user can submit signup more than once before verification. Reusing the
+ * existing unverified row is intentional, but its name/password must follow
+ * the latest signup submission instead of leaking stale data from a previous
+ * attempt.
+ */
+export async function updatePendingSignupUser(input: {
+  userId: string;
+  name: string;
+  passwordHash: string;
+}): Promise<void> {
+  const db = getDb();
+  await db
+    .update(users)
+    .set({
+      name: input.name.trim(),
+      passwordHash: input.passwordHash,
+      isActive: true,
+    })
+    .where(eq(users.id, input.userId));
+}
+
+/**
  * Persist a session record so it can be revoked server-side
  */
 export async function recordSession(session: {
