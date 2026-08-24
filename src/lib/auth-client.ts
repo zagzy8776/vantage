@@ -90,6 +90,12 @@ export async function signUp(input: {
   if (response.ok && payload?.ok) return { ok: true, testOnlyCode: payload.testOnlyCode };
   if (response.status === 429) return { ok: false, error: payload?.error ?? "Too many attempts. Please try again later." };
   if (response.status >= 400 && response.status < 500) return { ok: false, error: payload?.error ?? "Please check your details and try again." };
+  if (response.status === 503) {
+    return {
+      ok: false,
+      error: payload?.error ?? "Email verification is not configured yet. Add a VANTAGE sending domain or enable VANTAGE_EMAIL_TEST_MODE for controlled testing.",
+    };
+  }
   return { ok: false, error: "Sign up is temporarily unavailable. Please try again." };
 }
 
@@ -120,6 +126,12 @@ export async function resendVerification(email: string): Promise<VerifyEmailResu
   });
   const payload = await response.json().catch(() => null);
   if (response.ok) return { ok: true, testOnlyCode: payload?.testOnlyCode };
+  if (response.status === 503) {
+    return {
+      ok: false,
+      error: payload?.error ?? "Email verification is not configured yet. Add a VANTAGE sending domain or enable VANTAGE_EMAIL_TEST_MODE for controlled testing.",
+    };
+  }
   return { ok: false, error: payload?.error ?? "Could not resend the code right now." };
 }
 
