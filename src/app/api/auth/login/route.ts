@@ -7,6 +7,8 @@ import {
 } from "@/auth/user-store";
 import { verifyPassword } from "@/auth/password";
 import { createSessionToken, SESSION_COOKIE_NAME } from "@/auth/tokens";
+import { activateUserWithWorkspace } from "@/auth/verification-store";
+import { isTemporaryAuthModeEnabled } from "@/auth/auth-mode";
 import { checkEndpointRateLimit } from "@/lib/security/rate-limiter";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -50,15 +52,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
     }
 
+    let role = user.role;
+    let organizationId = user.organizationId;
+
     if (!user.emailVerified) {
-      return NextResponse.json(
-        {
-          error: "Please verify your email address before signing in.",
-          code: "EMAIL_NOT_VERIFIED",
-          email: user.email,
-        },
-        { status: 403 }
-      );
+      if (!isTemporaryAuthModeEnabled()) {
+        return NextResponse.json(
+          {
+            error: "Please verify your email address before signing in.",
+            code: "EMAIL_NOT_VERIFIED",
+            email: user.email,
+          },
+          { status: 403 }
+        );
+      }
+
+      const activated = await activateUserWithWorkspace({
+        userId: user.id,
+        name: user.name,
+      });
+      role = activated.role;
+      organizationId = activated.organizationId;
     }
 
     const sessionId = crypto.randomUUID().replaceAll("-", "");
@@ -67,8 +81,8 @@ export async function POST(request: NextRequest) {
       {
         userId: user.id,
         email: user.email,
-        role: user.role,
-        organizationId: user.organizationId ?? undefined,
+        role,
+        organizationId: organizationId ?? undefined,
       },
       SESSION_TTL_MS,
       new Date(),
@@ -79,8 +93,8 @@ export async function POST(request: NextRequest) {
       id: sessionId,
       userId: user.id,
       email: user.email,
-      role: user.role,
-      organizationId: user.organizationId,
+      role,
+      organizationId,
       expiresAt,
     });
 
@@ -91,8 +105,8 @@ export async function POST(request: NextRequest) {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
-        organizationId: user.organizationId ?? undefined,
+        role,
+        organizationId: organizationId ?? undefined,
         anonymous: false,
       },
       expiresAt: expiresAt.toISOString(),
