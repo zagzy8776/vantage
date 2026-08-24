@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
   try {
     const rawLimit = Number(new URL(request.url).searchParams.get("limit") ?? 100);
     const limit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 100, 200));
-    const organizationId = auth.organizationId ?? null;
+    const tenantVisibility = auth.organizationId
+      ? sql`(sra.owner_id = ${auth.userId} OR sra.organization_id = ${auth.organizationId})`
+      : sql`sra.owner_id = ${auth.userId}`;
 
     const rows = await getDb()
       .select({
@@ -42,10 +44,7 @@ export async function GET(request: NextRequest) {
         FROM search_run_businesses srb
         INNER JOIN search_run_access sra ON sra.search_run_id = srb.search_run_id
         WHERE srb.business_id = ${businesses.id}
-          AND (
-            sra.owner_id = ${auth.userId}
-            OR (${organizationId} IS NOT NULL AND sra.organization_id = ${organizationId})
-          )
+          AND ${tenantVisibility}
       )`)
       .orderBy(desc(leads.opportunityScore), desc(leads.updatedAt))
       .limit(limit);
