@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { start } from "workflow/api";
 import { validateDiscoveryQuery } from "@/lib/discover/validation";
 import { createSearchRun } from "@/services/search-runs/service";
+import { claimSearchRunForRecovery, releaseSearchRunLock } from "@/services/search-runs/service";
 import { recordSearchRunOwner } from "@/services/search-runs/access";
+import { discoveryRecoveryWorkflow } from "@/workflows/discovery-recovery";
 import { getResearchPlanForUser, refundResearchCredit, reserveResearchCredit } from "@/services/research-credits/service";
 import { requireRole } from "@/auth/middleware";
 import { getDb } from "@/lib/db";
@@ -9,6 +12,10 @@ import { searchRuns } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
+
+function newWorkerId() {
+  return `discover_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export async function POST(request: NextRequest) {
   const auth = await requireRole(request, ["owner", "admin", "analyst"]);
@@ -29,13 +36,25 @@ export async function POST(request: NextRequest) {
     }
 
     let runId: string | null = null;
+    let workerId: string | null = null;
     try {
       runId = await createSearchRun(validation.query);
       await recordSearchRunOwner({ searchRunId: runId, ownerId: auth.userId, organizationId: auth.organizationId });
-      return NextResponse.json({ runId, status: "queued" }, { status: 202 });
+
+      // Start the durable workflow immediately. The sweep endpoint is only a
+      // safety-net for orphaned runs; a new user search must never wait for cron.
+      workerId = newWorkerId();
+      const claimed = await claimSearchRunForRecovery(runId, workerId, 0);
+      if (!claimed) throw new Error("Could not claim the new search run.");
+
+      const workflowRun = await start(discoveryRecoveryWorkflow, [validation.query, runId, workerId]);
+      console.info(JSON.stringify({ diagnostic: "search_run_workflow_started", runId, workflowRunId: workflowRun.runId, worker: workerId }));
+
+      return NextResponse.json({ runId, status: "queued", workflowRunId: workflowRun.runId }, { status: 202 });
     } catch (error) {
+      if (runId && workerId) await releaseSearchRunLock(runId, workerId).catch(() => undefined);
       if (runId) await getDb().delete(searchRuns).where(eq(searchRuns.id, runId)).catch(() => undefined);
-      if (billable) await refundResearchCredit({ userId: auth.userId, searchRunId: reservationRunId, reason: "Search run creation failed" }).catch(() => undefined);
+      if (billable) await refundResearchCredit({ userId: auth.userId, searchRunId: reservationRunId, reason: "Search run creation or scheduling failed" }).catch(() => undefined);
       throw error;
     }
   } catch (error) {
