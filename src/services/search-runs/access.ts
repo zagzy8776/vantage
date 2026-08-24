@@ -1,6 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq, or, isNull } from "drizzle-orm";
 import { pgTable, text, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { getDb } from "@/lib/db";
+import type { AuthContext } from "@/auth/types";
 
 /**
  * Search runs predate the production tenant model, so ownership is kept in a
@@ -40,4 +41,18 @@ export async function getSearchRunOwner(searchRunId: string) {
     .from(searchRunAccess)
     .where(eq(searchRunAccess.searchRunId, searchRunId))
     .limit(1))[0] ?? null;
+}
+
+/**
+ * Tenant-safe access check. Legacy ownerless runs are deliberately restricted
+ * to platform owners/admins until explicitly associated with an account.
+ */
+export async function canAccessSearchRun(searchRunId: string, auth: AuthContext): Promise<boolean> {
+  const access = await getSearchRunOwner(searchRunId);
+  if (!access) return auth.role === "owner" || auth.role === "admin";
+  if (access.ownerId === auth.userId) return true;
+  if (access.organizationId && access.organizationId === auth.organizationId) {
+    return ["owner", "admin", "analyst", "reviewer", "client"].includes(auth.role);
+  }
+  return auth.role === "owner";
 }
