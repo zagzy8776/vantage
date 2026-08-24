@@ -8,10 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { AuthContext, User, UserRole, Permission } from "./types";
 import { verifySessionToken, SESSION_COOKIE_NAME } from "./tokens";
 import { checkResourceAccess } from "./service";
-import {
-  getSessionRecord,
-  getInvestigationAccessInfo,
-} from "./user-store";
+import { getSessionRecord, getInvestigationAccessInfo } from "./user-store";
 
 const PUBLIC_WORKSPACE_HEADER = "x-vantage-workspace-id";
 const PUBLIC_WORKSPACE_COOKIE = "vantage_workspace";
@@ -23,19 +20,11 @@ function getSessionToken(request: NextRequest): string | null {
 }
 
 function getAnonymousWorkspaceId(request: NextRequest) {
-  return (
-    request.headers.get(PUBLIC_WORKSPACE_HEADER)?.trim() ||
-    request.cookies.get(PUBLIC_WORKSPACE_COOKIE)?.value?.trim() ||
-    "anon_unscoped"
-  );
+  return request.headers.get(PUBLIC_WORKSPACE_HEADER)?.trim()
+    || request.cookies.get(PUBLIC_WORKSPACE_COOKIE)?.value?.trim()
+    || "anon_unscoped";
 }
 
-/**
- * Public/pilot mode provides an isolated anonymous workspace only when the
- * visitor does not already have a valid authenticated session. An
- * authenticated session always wins so that signup/verification can hand the
- * user directly into their new workspace even while public mode is enabled.
- */
 async function getPublicModeContext(request: NextRequest): Promise<AuthContext | null> {
   if (process.env.VANTAGE_PUBLIC_MODE !== "true") return null;
   const workspaceId = getAnonymousWorkspaceId(request);
@@ -49,43 +38,38 @@ async function getPublicModeContext(request: NextRequest): Promise<AuthContext |
 }
 
 export async function getAuthContext(request: NextRequest): Promise<AuthContext | null> {
-  // Prefer a real authenticated session. This is critical for email
-  // verification: the verify endpoint issues the session cookie, and the
-  // freshly verified user must not be downgraded back to the anonymous
-  // workspace simply because public/pilot mode is enabled.
   const token = getSessionToken(request);
   const session = verifySessionToken(token);
+
   if (session?.sessionId) {
     try {
       const record = await getSessionRecord(session.sessionId);
-      if (record && !record.revokedAt) {
+      // The signed token proves possession of the session secret; the DB record
+      // proves that this exact session is still active and reflects the user's
+      // current role/org. Never trust stale role or identity claims from a token.
+      if (record && !record.revokedAt && record.isActive && record.userId === session.userId && record.expiresAt > new Date()) {
         return {
-          userId: session.userId,
-          email: session.email,
-          role: session.role,
-          organizationId: session.organizationId,
+          userId: record.userId,
+          email: record.email,
+          role: record.role,
+          organizationId: record.organizationId ?? undefined,
           isAnonymous: false,
         };
       }
     } catch {
-      // Fail closed for a presented session. If the token cannot be verified
-      // against the session store, fall through to anonymous public mode only
-      // when explicitly enabled.
+      // Fail closed for a presented session. Anonymous fallback is allowed only
+      // when public mode is explicitly enabled.
     }
   }
 
-  // Only guests fall back to public/pilot mode.
   const publicContext = await getPublicModeContext(request);
   if (publicContext) return publicContext;
-
   return null;
 }
 
 export async function requireAuth(request: NextRequest): Promise<NextResponse | AuthContext> {
   const authContext = await getAuthContext(request);
-  if (!authContext) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
+  if (!authContext) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   return authContext;
 }
 
@@ -116,8 +100,14 @@ function authorize(
     organizationId: authContext.organizationId,
     createdAt: new Date(),
     updatedAt: new Date(),
-    isActive: true,
+    isActive: !authContext.isAnonymous,
   };
+
+  // Anonymous pilot workspaces are intentionally scoped to themselves and do
+  // not receive the implicit owner/admin global-view escape hatch.
+  if (authContext.isAnonymous && authContext.userId !== resourceOwnerId) {
+    return NextResponse.json({ error: "Access denied to this resource" }, { status: 403 });
+  }
 
   const result = checkResourceAccess(user, resourceOwnerId, resourceOrganizationId, sharedWith);
   const permissionLevels: Record<Permission, number> = { none: 0, read: 1, write: 2, admin: 3 };
@@ -159,9 +149,7 @@ export async function requireInvestigationAccess(
     return NextResponse.json({ error: "Access denied to this resource" }, { status: 403 });
   }
 
-  if (!accessInfo) {
-    return NextResponse.json({ error: "Investigation not found" }, { status: 404 });
-  }
+  if (!accessInfo) return NextResponse.json({ error: "Investigation not found" }, { status: 404 });
 
   const denied = authorize(
     authContext,
