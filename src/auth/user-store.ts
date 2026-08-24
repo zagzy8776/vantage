@@ -34,6 +34,10 @@ export interface StoredUser {
 export interface SessionRecord {
   id: string;
   userId: string;
+  email: string;
+  role: UserRole;
+  organizationId: string | null;
+  isActive: boolean;
   revokedAt: Date | null;
   expiresAt: Date;
 }
@@ -45,8 +49,7 @@ export interface InvestigationAccessInfo {
 }
 
 export async function findUserByEmail(email: string): Promise<StoredUser | null> {
-  const db = getDb();
-  const rows = await db.select().from(users).where(eq(users.email, email.trim().toLowerCase())).limit(1);
+  const rows = await getDb().select().from(users).where(eq(users.email, email.trim().toLowerCase())).limit(1);
   const row = rows[0];
   if (!row) return null;
   return {
@@ -62,8 +65,7 @@ export async function findUserByEmail(email: string): Promise<StoredUser | null>
 }
 
 export async function countUsers(): Promise<number> {
-  const db = getDb();
-  const rows = await db.select({ id: users.id }).from(users);
+  const rows = await getDb().select({ id: users.id }).from(users);
   return rows.length;
 }
 
@@ -100,13 +102,8 @@ export async function createUser(input: {
   };
 }
 
-export async function updatePendingSignupUser(input: {
-  userId: string;
-  name: string;
-  passwordHash: string;
-}): Promise<void> {
-  const db = getDb();
-  await db.update(users).set({
+export async function updatePendingSignupUser(input: { userId: string; name: string; passwordHash: string }): Promise<void> {
+  await getDb().update(users).set({
     name: input.name.trim(),
     passwordHash: input.passwordHash,
     isActive: true,
@@ -132,14 +129,28 @@ export async function recordSession(session: {
   });
 }
 
+/** Resolve a token session against the current DB user so role/org deactivation changes take effect immediately. */
 export async function getSessionRecord(sessionId: string): Promise<SessionRecord | null> {
   const rows = await getDb().select({
     id: authSessions.id,
     userId: authSessions.userId,
+    email: users.email,
+    role: users.role,
+    organizationId: users.organizationId,
+    isActive: users.isActive,
     revokedAt: authSessions.revokedAt,
     expiresAt: authSessions.expiresAt,
-  }).from(authSessions).where(eq(authSessions.id, sessionId)).limit(1);
-  return rows[0] ?? null;
+  }).from(authSessions)
+    .innerJoin(users, eq(users.id, authSessions.userId))
+    .where(eq(authSessions.id, sessionId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...row,
+    role: row.role as UserRole,
+    organizationId: row.organizationId ?? null,
+  };
 }
 
 export async function revokeSession(sessionId: string): Promise<void> {
@@ -150,7 +161,6 @@ export async function touchLastLogin(userId: string): Promise<void> {
   await getDb().update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, userId));
 }
 
-/** Persist the tenant owner for a newly created investigation. */
 export async function recordInvestigationOwner(input: {
   investigationId: string;
   ownerId: string;
@@ -165,16 +175,11 @@ export async function recordInvestigationOwner(input: {
 }
 
 /**
- * Resolve who owns an investigation and how it is shared.
- *
- * Primary source is investigation_access. For legacy records created before
- * ownership was persisted, we safely infer ownership only when every linked
- * search run points to the same search-run owner. Ambiguous/ownerless legacy
- * records remain inaccessible rather than being assigned to the wrong tenant.
+ * Resolve investigation ownership. Legacy records are inferred only when all
+ * linked search runs have one unambiguous owner; otherwise access is denied.
  */
 export async function getInvestigationAccessInfo(investigationId: string): Promise<InvestigationAccessInfo | null> {
   const db = getDb();
-
   let accessRow = (await db.select().from(investigationAccess)
     .where(eq(investigationAccess.investigationId, investigationId)).limit(1))[0] ?? null;
 
@@ -182,8 +187,7 @@ export async function getInvestigationAccessInfo(investigationId: string): Promi
     const legacyRows = await db.select({
       ownerId: searchRunAccess.ownerId,
       organizationId: searchRunAccess.organizationId,
-    })
-      .from(investigationSearchRuns)
+    }).from(investigationSearchRuns)
       .innerJoin(searchRunAccess, eq(searchRunAccess.searchRunId, investigationSearchRuns.searchRunId))
       .where(eq(investigationSearchRuns.investigationId, investigationId));
 
@@ -203,36 +207,27 @@ export async function getInvestigationAccessInfo(investigationId: string): Promi
   }
 
   if (!accessRow) return null;
-
   const shareRows = await db.select({
     userId: investigationShares.userId,
     permission: investigationShares.permission,
-  }).from(investigationShares)
-    .where(eq(investigationShares.investigationAccessId, accessRow.id));
+  }).from(investigationShares).where(eq(investigationShares.investigationAccessId, accessRow.id));
 
   return {
     ownerId: accessRow.ownerId,
     organizationId: accessRow.organizationId ?? null,
-    sharedWith: shareRows.map((share) => ({
-      userId: share.userId,
-      permission: share.permission as Permission,
-    })),
+    sharedWith: shareRows.map((share) => ({ userId: share.userId, permission: share.permission as Permission })),
   };
 }
 
-/** Return investigation IDs visible to the authenticated tenant. */
 export async function listAccessibleInvestigationIds(auth: AuthContext): Promise<string[]> {
-  const rows = await getDb().select({ investigationId: investigationAccess.investigationId })
+  const ownedOrOrg = await getDb().select({ investigationId: investigationAccess.investigationId })
     .from(investigationAccess)
     .where(auth.organizationId
       ? eq(investigationAccess.organizationId, auth.organizationId)
       : eq(investigationAccess.ownerId, auth.userId));
-
-  const ownerRows = await getDb().select({ investigationId: investigationAccess.investigationId })
-    .from(investigationAccess)
-    .where(eq(investigationAccess.ownerId, auth.userId));
-
-  return Array.from(new Set([...rows, ...ownerRows].map((row) => row.investigationId)));
+  const owned = await getDb().select({ investigationId: investigationAccess.investigationId })
+    .from(investigationAccess).where(eq(investigationAccess.ownerId, auth.userId));
+  return Array.from(new Set([...ownedOrOrg, ...owned].map((row) => row.investigationId)));
 }
 
 export async function ensureOwnerUser(): Promise<void> {
