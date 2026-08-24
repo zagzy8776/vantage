@@ -3,11 +3,9 @@ import { getDb } from "@/lib/db";
 import { searchRunAccess } from "@/lib/db/schema";
 import type { AuthContext } from "@/auth/types";
 
-/**
- * Search run ownership lives in the canonical search_run_access table. The
- * table is defined in the DB schema/migrations so deployments and runtime use
- * the same Drizzle definition.
- */
+// Keep the table export available to the discovery history route while using
+// the canonical schema definition for migrations and runtime queries.
+export { searchRunAccess } from "@/lib/db/schema";
 
 export async function recordSearchRunOwner(input: {
   searchRunId: string;
