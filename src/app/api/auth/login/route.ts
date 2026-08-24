@@ -1,4 +1,3 @@
-import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
   findUserByEmail,
@@ -10,30 +9,8 @@ import { verifyPassword } from "@/auth/password";
 import { createSessionToken, SESSION_COOKIE_NAME } from "@/auth/tokens";
 import { checkEndpointRateLimit } from "@/lib/security/rate-limiter";
 
-/** Default session lifetime: 24 hours (matches tokens.ts) */
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
-function buildSessionCookie(token: string): string {
-  const attributes = [
-    `${SESSION_COOKIE_NAME}=${token}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (process.env.NODE_ENV === "production") {
-    attributes.push("Secure");
-  }
-  attributes.push(`Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
-  return attributes.join("; ");
-}
-
-/**
- * POST /api/auth/login
- *
- * Validates credentials against the users table and issues an HMAC-signed,
- * revocable session token stored in an HttpOnly cookie.
- * Responses are deliberately generic to prevent user enumeration.
- */
 export async function POST(request: NextRequest) {
   try {
     await ensureOwnerUser();
@@ -73,7 +50,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
     }
 
-    // Unverified self-service accounts must not receive a workspace session.
     if (!user.emailVerified) {
       return NextResponse.json(
         {
@@ -85,7 +61,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sessionId = randomBytes(16).toString("hex");
+    const sessionId = crypto.randomUUID().replaceAll("-", "");
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
     const token = createSessionToken(
       {
@@ -111,10 +87,27 @@ export async function POST(request: NextRequest) {
     void touchLastLogin(user.id).catch(() => undefined);
 
     const response = NextResponse.json({
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        organizationId: user.organizationId ?? undefined,
+        anonymous: false,
+      },
       expiresAt: expiresAt.toISOString(),
     });
-    response.headers.set("Set-Cookie", buildSessionCookie(token));
+
+    response.cookies.set({
+      name: SESSION_COOKIE_NAME,
+      value: token,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: Math.floor(SESSION_TTL_MS / 1000),
+    });
+
     return response;
   } catch (error) {
     console.error("Login error:", error instanceof Error ? error.message : "unknown");
