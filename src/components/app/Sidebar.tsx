@@ -18,7 +18,6 @@ const NAV = [
   { label: "Automations", href: "/automations", icon: "M13 10V3L4 14h7v7l9-11h-7z" },
   { label: "Sources", href: "/sources", icon: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" },
   { label: "Settings", href: "/settings", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94" },
-  { label: "Usage & Billing", href: "/billing", icon: "M3 10h18M7 15h2m2 0h2m2 0h2M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" },
 ];
 
 const MOBILE_NAV = [
