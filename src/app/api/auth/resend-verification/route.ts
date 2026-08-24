@@ -2,8 +2,8 @@
  * POST /api/auth/resend-verification
  *
  * Issues a fresh verification code for an unverified account.
- * - Enforces a cooldown between sends (per account).
- * - Responses are uniform for unknown/verified accounts (no enumeration).
+ * Explicit VANTAGE_EMAIL_TEST_MODE returns the code for controlled testing
+ * without sending any email. Customer email delivery remains provider-backed.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -24,46 +24,31 @@ import { checkEndpointRateLimit } from "@/lib/security/rate-limiter";
 
 export const dynamic = "force-dynamic";
 
+const isEmailTestModeEnabled = () => process.env.VANTAGE_EMAIL_TEST_MODE === "true";
+
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
     const limit = checkEndpointRateLimit(ip, "expensive");
-    if (!limit.allowed) {
-      return NextResponse.json(
-        { error: "Too many attempts. Please try again later." },
-        { status: 429 }
-      );
-    }
+    if (!limit.allowed) return NextResponse.json({ error: "Too many attempts. Please try again later." }, { status: 429 });
 
     const body = await request.json().catch(() => null);
     const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-    if (!email) {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
-    }
+    if (!email) return NextResponse.json({ error: "Email is required" }, { status: 400 });
 
-    const uniformOk = NextResponse.json({
+    const uniformOk = (testOnlyCode?: string) => NextResponse.json({
       ok: true,
       message: "If a verification code can be sent, it is on its way.",
+      ...(testOnlyCode ? { testOnlyCode } : {}),
     });
 
     const user = await findUserByEmail(email);
-    if (!user || user.emailVerified) {
-      // Uniform response - never reveal account existence or status.
-      return uniformOk;
-    }
+    if (!user || user.emailVerified) return uniformOk();
 
     const pending = await findLatestPendingVerification(user.id);
     if (pending && !isResendAllowed(pending.createdAt)) {
-      const retryIn = Math.max(
-        1,
-        Math.ceil(
-          (pending.createdAt.getTime() + RESEND_COOLDOWN_MS - Date.now()) / 1000
-        )
-      );
-      return NextResponse.json(
-        { error: `Please wait ${retryIn}s before requesting a new code.` },
-        { status: 429 }
-      );
+      const retryIn = Math.max(1, Math.ceil((pending.createdAt.getTime() + RESEND_COOLDOWN_MS - Date.now()) / 1000));
+      return NextResponse.json({ error: `Please wait ${retryIn}s before requesting a new code.` }, { status: 429 });
     }
 
     const code = generateVerificationCode();
@@ -73,15 +58,17 @@ export async function POST(request: NextRequest) {
       expiresAt: new Date(Date.now() + CODE_TTL_MS),
     });
 
+    if (isEmailTestModeEnabled()) return uniformOk(code);
+
     const result = await sendVerificationEmail(user.email, code);
-    if (!result.sent && result.configured) {
+    if (!result.sent) {
       return NextResponse.json(
-        { error: result.reason ?? "Could not send the email right now." },
-        { status: 503 }
+        { error: result.reason ?? "Could not send the email right now. Configure a VANTAGE sending domain before enabling customer email verification." },
+        { status: result.configured ? 503 : 503 }
       );
     }
 
-    return uniformOk;
+    return uniformOk();
   } catch (error) {
     console.error("Resend-verification error:", error instanceof Error ? error.message : "unknown");
     return NextResponse.json({ error: "Could not resend code" }, { status: 500 });
