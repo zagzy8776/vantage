@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createStandaloneInvestigation } from "@/services/investigations/service";
 import { requireRole } from "@/auth/middleware";
+import { recordInvestigationOwner } from "@/auth/user-store";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  // Investigation creation - analyst access or higher required
   const auth = await requireRole(request, ["owner", "admin", "analyst"]);
   if (auth instanceof NextResponse) return auth;
 
@@ -14,6 +14,11 @@ export async function POST(request: NextRequest) {
     if (!body) return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
 
     const result = await createStandaloneInvestigation(body);
+    await recordInvestigationOwner({
+      investigationId: result.investigationId,
+      ownerId: auth.userId,
+      organizationId: auth.organizationId,
+    });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof Error) {
