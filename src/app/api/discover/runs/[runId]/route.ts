@@ -11,6 +11,7 @@ function customerResult(result: Record<string, unknown> | null) {
   return {
     results: Array.isArray(result.results) ? result.results : [],
     storedIds: Array.isArray(result.storedIds) ? result.storedIds : [],
+    resultSources: Array.isArray(result.resultSources) ? result.resultSources : [],
     totalUniqueResults: typeof result.totalUniqueResults === "number" ? result.totalUniqueResults : undefined,
     workflow: result.workflow && typeof result.workflow === "object"
       ? { stage: (result.workflow as { stage?: unknown }).stage }
@@ -28,17 +29,22 @@ export async function GET(request: NextRequest, context: { params: { runId: stri
     if (!run) return NextResponse.json({ error: "Search run not found." }, { status: 404 });
 
     if (!(await canAccessSearchRun(run.id, auth))) {
-      // Avoid revealing whether another tenant's run exists.
       return NextResponse.json({ error: "Search run not found." }, { status: 404 });
     }
 
-    // Customer-facing state contains outcomes and progress only. Provider
-    // names, diagnostics, fallback information, source internals and cost data
-    // remain server/admin concerns.
+    // Keep customer-facing progress useful while hiding provider names,
+    // diagnostics, fallback details and cost information.
     return NextResponse.json({
       runId: run.id,
+      query: run.query,
+      country: run.country,
+      city: run.city,
+      depth: run.depth,
       status: run.status,
-      query: { category: run.query, country: run.country, city: run.city, depth: run.depth },
+      discoveredCount: run.discoveredCount,
+      enrichedCount: run.enrichedCount,
+      verifiedCount: run.verifiedCount,
+      createdAt: run.createdAt,
       startedAt: run.startedAt ?? run.createdAt,
       completedAt: run.completedAt,
       durationMs: run.durationMs,
