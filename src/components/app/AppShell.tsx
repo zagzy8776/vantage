@@ -21,6 +21,17 @@ function AuthErrorScreen({ onRetry }: { onRetry: () => void }) {
   return <div className="min-h-screen bg-background text-foreground font-sans flex items-center justify-center p-6"><div className="border border-border rounded-lg bg-surface p-6 max-w-sm text-center space-y-3"><h1 className="text-sm font-bold text-foreground font-mono uppercase tracking-wide">Session unavailable</h1><p className="text-xs text-subtle">VANTAGE could not confirm your sign-in status. Check your connection and try again.</p><div className="flex items-center justify-center gap-2"><Button size="sm" variant="secondary" onClick={onRetry}>Retry</Button><Link href="/login" className="inline-flex items-center justify-center h-8 px-3 rounded-md border border-border text-xs font-medium text-foreground hover:bg-surface-2 transition-colors">Go to sign in</Link></div></div></div>;
 }
 
+function clearSharedAccountState() {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem("vantage:last-discover-run-id");
+    window.sessionStorage.removeItem("vantage:discover-results-snapshot");
+    window.localStorage.removeItem("vantage-ui-preferences");
+  } catch {
+    // Storage can be disabled; server-side authorization remains authoritative.
+  }
+}
+
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -34,12 +45,25 @@ export function AppShell({ children }: AppShellProps) {
     else { setUser(null); setStatus("unauthenticated"); }
   }, []);
   const checkSession = useCallback((): Promise<void> => fetchCurrentUser().then(applySessionResult).catch(() => applySessionResult("error")), [applySessionResult]);
+
   useEffect(() => {
     if (PUBLIC_PATHS.includes(pathname)) return;
     let cancelled = false;
     fetchCurrentUser().then((result) => { if (!cancelled) applySessionResult(result); }).catch(() => { if (!cancelled) applySessionResult("error"); });
     return () => { cancelled = true; };
   }, [pathname, applySessionResult]);
+
+  useEffect(() => {
+    if (PUBLIC_PATHS.includes(pathname)) return;
+    if (!user?.id) {
+      if (status === "unauthenticated") clearSharedAccountState();
+      return;
+    }
+    const previousUserId = window.sessionStorage.getItem("vantage:active-user-id");
+    if (previousUserId && previousUserId !== user.id) clearSharedAccountState();
+    window.sessionStorage.setItem("vantage:active-user-id", user.id);
+  }, [user?.id, status, pathname]);
+
   useEffect(() => {
     if (status !== "unauthenticated" || PUBLIC_PATHS.includes(pathname)) return;
     const nextPath = getCurrentPath();
