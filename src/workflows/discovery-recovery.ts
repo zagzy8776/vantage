@@ -1,12 +1,5 @@
 import type { DiscoveryQuery } from "@/providers/business/types";
 
-/**
- * Durable discovery execution for serverless deployments.
- *
- * The workflow itself is only orchestration. All network/database work stays
- * inside the step so Vercel can checkpoint the workflow independently of the
- * HTTP request that started it.
- */
 export async function discoveryRecoveryWorkflow(
   query: DiscoveryQuery,
   runId: string,
@@ -26,13 +19,26 @@ async function executeDiscoveryStep(
 ) {
   "use step";
 
-  const { ensureSearchRunTerminal, releaseSearchRunLock } = await import(
+  const { ensureSearchRunTerminal, releaseSearchRunLock, updateSearchRun } = await import(
     "@/services/search-runs/service"
   );
+  const { scopeDiscoveryResult } = await import("@/services/search-runs/scoping");
 
   try {
     const { discoverBusinesses } = await import("@/lib/discover/service");
-    await discoverBusinesses(query, runId);
+
+    // Ask providers for a wider candidate window. The customer-facing result is
+    // reduced to unseen businesses in scopeDiscoveryResult, which makes repeat
+    // scans useful instead of returning the same first page forever.
+    const candidateLimit = Math.min(250, Math.max(query.limit, query.limit * 3));
+    const rawResult = await discoverBusinesses({ ...query, limit: candidateLimit }, runId);
+    const scopedResult = await scopeDiscoveryResult(runId, query.limit, rawResult as Record<string, unknown>);
+
+    await updateSearchRun(runId, {
+      result: scopedResult as Record<string, unknown>,
+      discoveredCount: scopedResult.totalUniqueResults,
+    });
+
     return { status: "completed" as const };
   } catch (error) {
     await ensureSearchRunTerminal(runId, error);
@@ -42,7 +48,4 @@ async function executeDiscoveryStep(
   }
 }
 
-// Discovery providers can incur real costs. Do not replay the entire discovery
-// pipeline automatically when a workflow step fails; the next external sweep
-// can reclaim a stale run after the lock timeout.
 executeDiscoveryStep.maxRetries = 0;
