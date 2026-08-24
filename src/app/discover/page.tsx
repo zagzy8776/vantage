@@ -47,6 +47,7 @@ type ResultBusiness = {
 };
 
 const TERMINAL = ["completed", "completed_with_errors", "failed"];
+const LAST_RUN_STORAGE_KEY = "vantage:last-discover-run-id";
 
 function stageLabel(stages: Record<string, { status?: string }> | undefined) {
   const labels: Record<string, string> = {
@@ -103,6 +104,18 @@ export default function DiscoverPage() {
     [results, selectedIds],
   );
 
+  const rememberRun = useCallback((runId: string) => {
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(LAST_RUN_STORAGE_KEY, runId);
+      const url = new URL(window.location.href);
+      url.searchParams.set("runId", runId);
+      window.history.replaceState(window.history.state, "", url.toString());
+    } catch {
+      // Browser storage/history can be unavailable in privacy-restricted contexts.
+    }
+  }, []);
+
   const loadRun = useCallback(async (runId: string, options: { poll?: boolean } = {}) => {
     const poll = options.poll ?? false;
     let current: SearchRun | null = null;
@@ -115,6 +128,7 @@ export default function DiscoverPage() {
 
       current = payload as SearchRun;
       setSelectedRunId(runId);
+      rememberRun(runId);
       setWorkflowStage(stageLabel(current.stages) ?? (TERMINAL.includes(current.status) ? "Complete" : "Queued for research worker"));
 
       if (TERMINAL.includes(current.status)) break;
@@ -136,23 +150,32 @@ export default function DiscoverPage() {
       return [current!, ...withoutCurrent].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     });
     return current;
-  }, []);
+  }, [rememberRun]);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const response = await fetch("/api/discover/runs?limit=20", { cache: "no-store" });
+      const response = await fetch("/api/discover/runs?limit=50", { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.error ?? "Discovery history is unavailable.");
 
       const history = (payload?.runs ?? []) as SearchRun[];
       setRuns(history);
 
+      const queryRunId = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("runId") : null;
+      const storedRunId = typeof window !== "undefined" ? window.sessionStorage.getItem(LAST_RUN_STORAGE_KEY) : null;
+      const preferredRunId = queryRunId ?? storedRunId;
+      const preferredRun = preferredRunId ? history.find((run) => run.id === preferredRunId) : undefined;
       const latestFinished = history.find((run) => TERMINAL.includes(run.status) && run.result);
-      if (latestFinished) {
-        await loadRun(latestFinished.id);
-      } else if (history[0]) {
-        await loadRun(history[0].id, { poll: true });
+      const initialRun = preferredRun ?? latestFinished ?? history.find((run) => run.result) ?? history[0];
+
+      if (initialRun) {
+        const current = await loadRun(initialRun.id, { poll: false });
+        if (current && !TERMINAL.includes(current.status)) {
+          setStillRunningNotice(true);
+          setMessage("This scan is still running. Your saved results will remain available while research continues.");
+          void loadRun(initialRun.id, { poll: true }).catch(() => undefined);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Discovery history is unavailable.");
@@ -188,6 +211,7 @@ export default function DiscoverPage() {
       }
       if (!initial?.runId) throw new Error("Discovery did not return a search run ID.");
 
+      rememberRun(initial.runId);
       const run = await loadRun(initial.runId, { poll: true });
       if (run && !TERMINAL.includes(run.status)) {
         setStillRunningNotice(true);
@@ -206,8 +230,11 @@ export default function DiscoverPage() {
     setError(null);
     setMessage(null);
     try {
-      const run = await loadRun(runId, { poll: !TERMINAL.includes(runs.find((item) => item.id === runId)?.status ?? "") });
-      if (run && !TERMINAL.includes(run.status)) setMessage("This scan is still running. You can leave and return later.");
+      const run = await loadRun(runId, { poll: false });
+      if (run && !TERMINAL.includes(run.status)) {
+        setMessage("This scan is still running. You can leave and return later; its progress will be recovered automatically.");
+        void loadRun(runId, { poll: true }).catch(() => undefined);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load this scan.");
     }
