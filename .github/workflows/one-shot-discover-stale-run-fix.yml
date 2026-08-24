@@ -1,0 +1,76 @@
+name: One-shot Discover stale-run fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'chore: apply discover stale-run fix'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch Discover stale run handling
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/app/discover/page.tsx')
+          text = p.read_text(encoding='utf-8')
+
+          old = '''  const rememberRun = useCallback((runId: string) => {\n    if (typeof window === "undefined") return;\n    try {\n      window.sessionStorage.setItem(LAST_RUN_STORAGE_KEY, runId);\n      const url = new URL(window.location.href);\n      url.searchParams.set("runId", runId);\n      window.history.replaceState(window.history.state, "", url.toString());\n    } catch {\n      // Browser storage/history can be unavailable in privacy-restricted contexts.\n    }\n  }, []);'''
+
+          new = '''  const clearRememberedRun = useCallback(() => {\n    if (typeof window === "undefined") return;\n    try {\n      window.sessionStorage.removeItem(LAST_RUN_STORAGE_KEY);\n      const url = new URL(window.location.href);\n      if (url.searchParams.has("runId")) {\n        url.searchParams.delete("runId");\n        window.history.replaceState(window.history.state, "", url.toString());\n      }\n    } catch {\n      // Browser storage/history can be unavailable in privacy-restricted contexts.\n    }\n  }, []);\n\n  const rememberRun = useCallback((runId: string) => {\n    if (typeof window === "undefined") return;\n    try {\n      window.sessionStorage.setItem(LAST_RUN_STORAGE_KEY, runId);\n      const url = new URL(window.location.href);\n      url.searchParams.set("runId", runId);\n      window.history.replaceState(window.history.state, "", url.toString());\n    } catch {\n      // Browser storage/history can be unavailable in privacy-restricted contexts.\n    }\n  }, []);'''
+          if old not in text:
+              raise SystemExit('rememberRun block not found')
+          text = text.replace(old, new, 1)
+
+          old = '''      const response = await fetch(`/api/discover/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });\n      const payload = await response.json().catch(() => null);\n      if (!response.ok) throw new Error(payload?.error ?? "Search run state is unavailable.");'''
+          new = '''      const response = await fetch(`/api/discover/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });\n      const payload = await response.json().catch(() => null);\n      if (!response.ok) {\n        // A remembered URL/sessionStorage entry can outlive a workspace or\n        // account change. Treat an inaccessible run as stale browser state,\n        // not as a search failure and never surface another workspace's data.\n        if (response.status === 404) {\n          clearRememberedRun();\n          setSelectedRunId(null);\n          setResults([]);\n          setSelectedIds([]);\n          setStillRunningNotice(false);\n          setWorkflowStage(null);\n          return null;\n        }\n        throw new Error(payload?.error ?? "Search run state is unavailable.");\n      }'''
+          if old not in text:
+              raise SystemExit('loadRun response block not found')
+          text = text.replace(old, new, 1)
+
+          old = '''  }, [rememberRun]);'''
+          new = '''  }, [clearRememberedRun, rememberRun]);'''
+          if old not in text:
+              raise SystemExit('loadRun deps block not found')
+          text = text.replace(old, new, 1)
+
+          old = '''      const preferredRunId = queryRunId ?? storedRunId;\n      const preferredRun = preferredRunId ? history.find((run) => run.id === preferredRunId) : undefined;\n      const latestFinished = history.find((run) => TERMINAL.includes(run.status) && run.result);\n      const initialRun = preferredRun ?? latestFinished ?? history.find((run) => run.result) ?? history[0];\n\n      if (initialRun) {\n        const current = await loadRun(initialRun.id, { poll: false });\n        if (current && !TERMINAL.includes(current.status)) {\n          setStillRunningNotice(true);\n          setMessage("This scan is still running. Your saved results will remain available while research continues.");\n          void loadRun(initialRun.id, { poll: true }).catch(() => undefined);\n        }\n      }'''
+          new = '''      const preferredRunId = queryRunId ?? storedRunId;\n      const preferredRun = preferredRunId ? history.find((run) => run.id === preferredRunId) : undefined;\n      const latestFinished = history.find((run) => TERMINAL.includes(run.status) && run.result);\n      const firstSavedResult = history.find((run) => run.result);\n      const initialRun = preferredRun ?? latestFinished ?? firstSavedResult;\n\n      // Never auto-open a queued/empty history row just because it is first in\n      // the list. That caused a stale run URL to produce "Search run not found"\n      // while the same scan still appeared in Your scans.\n      if (!preferredRun && preferredRunId) {\n        clearRememberedRun();\n      }\n\n      if (initialRun) {\n        const current = await loadRun(initialRun.id, { poll: false });\n        if (current && !TERMINAL.includes(current.status)) {\n          setStillRunningNotice(true);\n          setMessage("This scan is still running. Your saved results will remain available while research continues.");\n          void loadRun(initialRun.id, { poll: true }).catch(() => undefined);\n        }\n      }'''
+          if old not in text:
+              raise SystemExit('loadHistory selection block not found')
+          text = text.replace(old, new, 1)
+
+          old = '''  }, [loadRun]);'''
+          new = '''  }, [clearRememberedRun, loadRun]);'''
+          if old not in text:
+              raise SystemExit('loadHistory deps block not found')
+          text = text.replace(old, new, 1)
+
+          old = '''    try {\n      const run = await loadRun(runId, { poll: false });\n      if (run && !TERMINAL.includes(run.status)) {'''
+          new = '''    try {\n      const run = await loadRun(runId, { poll: false });\n      if (!run) return;\n      if (run && !TERMINAL.includes(run.status)) {'''
+          if old not in text:
+              raise SystemExit('handleSelectRun block not found')
+          text = text.replace(old, new, 1)
+
+          p.write_text(text, encoding='utf-8')
+
+      - name: Run lightweight sanity checks
+        run: |
+          test -f src/app/discover/page.tsx
+          grep -q 'clearRememberedRun' src/app/discover/page.tsx
+          grep -q 'firstSavedResult' src/app/discover/page.tsx
+
+      - name: Commit patched file and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/discover/page.tsx .github/workflows/one-shot-discover-stale-run-fix.yml
+          git commit -m "chore: apply discover stale-run fix"
+          git push
