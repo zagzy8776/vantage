@@ -26,5 +26,5 @@ CREATE INDEX IF NOT EXISTS search_run_seen_businesses_owner_idx
 CREATE INDEX IF NOT EXISTS search_run_seen_businesses_business_idx
   ON search_run_seen_businesses(business_id);
 
--- Existing historical runs are intentionally not backfilled. New searches use
--- tenant-scoped mappings; legacy ownerless data remains isolated from customer views.
+-- Existing historical runs are intentionally not backfilled.
+-- New searches use tenant-scoped mappings and legacy ownerless data stays isolated.
