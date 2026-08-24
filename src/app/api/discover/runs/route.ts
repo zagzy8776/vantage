@@ -38,7 +38,6 @@ export async function GET(request: NextRequest) {
         startedAt: searchRuns.startedAt,
         completedAt: searchRuns.completedAt,
         stages: searchRuns.stages,
-        result: searchRuns.result,
       })
       .from(searchRuns)
       .innerJoin(searchRunAccess, eq(searchRunAccess.searchRunId, searchRuns.id))
@@ -49,7 +48,18 @@ export async function GET(request: NextRequest) {
     // History is a read-only endpoint. It must never trigger a provider call,
     // launch a workflow, consume a research credit, or recover a stale run.
     // Recovery is handled by the discovery workflow/external sweep path.
-    return NextResponse.json({ runs }, {
+    // Keep the history payload intentionally small: detailed result data is
+    // fetched only for the explicitly selected run through the protected
+    // single-run endpoint.
+    const customerRuns = runs.map((run) => ({
+      ...run,
+      stages: Object.fromEntries(
+        Object.entries((run.stages ?? {}) as Record<string, { status?: string }>)
+          .map(([stage, value]) => [stage, { status: value?.status }]),
+      ),
+    }));
+
+    return NextResponse.json({ runs: customerRuns }, {
       status: 200,
       headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
     });
