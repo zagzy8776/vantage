@@ -87,40 +87,55 @@ export class YelpBusinessProvider implements BusinessDiscoveryProvider {
     const apiKey = process.env.YELP_API_KEY?.trim();
     if (!apiKey) return { provider: this.name, status: "unavailable", results: [], errorMessage: "YELP_API_KEY is not configured." };
 
-    try {
-      const url = new URL("https://api.yelp.com/v3/businesses/search");
-      url.searchParams.set("term", query.category);
-      url.searchParams.set("limit", String(query.limit));
+    const target = Math.min(240, Math.max(1, query.limit));
+    const pageSize = Math.min(50, target);
+    const maxOffset = Math.min(1000, Math.max(0, target - pageSize));
+    const collected = new Map<string, NormalizedBusiness>();
 
-      const location = buildLocationTerm(query);
-      if (location) url.searchParams.set("location", location);
-      if (query.latitude !== undefined && query.longitude !== undefined) {
-        url.searchParams.set("latitude", String(query.latitude));
-        url.searchParams.set("longitude", String(query.longitude));
+    try {
+      for (let offset = 0; offset <= maxOffset && collected.size < target; offset += 50) {
+        const url = new URL("https://api.yelp.com/v3/businesses/search");
+        url.searchParams.set("term", query.category);
+        url.searchParams.set("limit", String(Math.min(pageSize, target - collected.size)));
+        url.searchParams.set("offset", String(offset));
+
+        const location = buildLocationTerm(query);
+        if (location) url.searchParams.set("location", location);
+        if (query.latitude !== undefined && query.longitude !== undefined) {
+          url.searchParams.set("latitude", String(query.latitude));
+          url.searchParams.set("longitude", String(query.longitude));
+        }
+
+        const response = await fetch(url.toString(), {
+          headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+          cache: "no-store",
+          signal: AbortSignal.timeout(timeoutMs("BUSINESS_PROVIDER_TIMEOUT_MS", 20_000)),
+        });
+
+        if (response.status === 429) return { provider: this.name, status: collected.size ? "success" : "rate-limited", results: [...collected.values()], errorMessage: "Yelp rate limit exceeded." };
+        if (response.status === 401 || response.status === 403) return { provider: this.name, status: "failed", results: [...collected.values()], errorMessage: "Yelp authentication failed." };
+        if (response.status === 400) return { provider: this.name, status: "invalid-request", results: [...collected.values()], errorMessage: "Yelp rejected the search request." };
+        if (!response.ok) return { provider: this.name, status: collected.size ? "success" : "unexpected-response", results: [...collected.values()], errorMessage: `Yelp request failed with status ${response.status}` };
+
+        const data = (await response.json()) as YelpSearchResponse;
+        if (!data || !Array.isArray(data.businesses)) return { provider: this.name, status: collected.size ? "success" : "unexpected-response", results: [...collected.values()], errorMessage: "Malformed Yelp response." };
+        if (!data.businesses.length) break;
+
+        for (const business of data.businesses) {
+          if (!matchesRequestedLocation(query, business)) continue;
+          const normalized = normalizeResult(business);
+          if (normalized) collected.set(normalized.externalId, normalized);
+        }
+
+        if (data.businesses.length < pageSize) break;
       }
 
-      const response = await fetch(url.toString(), {
-        headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-        cache: "no-store",
-        signal: AbortSignal.timeout(timeoutMs("BUSINESS_PROVIDER_TIMEOUT_MS", 20_000)),
-      });
-
-      if (response.status === 429) return { provider: this.name, status: "rate-limited", results: [], errorMessage: "Yelp rate limit exceeded." };
-      if (response.status === 401 || response.status === 403) return { provider: this.name, status: "failed", results: [], errorMessage: "Yelp authentication failed." };
-      if (!response.ok) return { provider: this.name, status: response.status === 400 ? "invalid-request" : "unexpected-response", results: [], errorMessage: `Yelp request failed with status ${response.status}` };
-
-      const data = (await response.json()) as YelpSearchResponse;
-      if (!data || !Array.isArray(data.businesses)) return { provider: this.name, status: "unexpected-response", results: [], errorMessage: "Malformed Yelp response." };
-
-      const results = data.businesses
-        .filter((business) => matchesRequestedLocation(query, business))
-        .map((business) => normalizeResult(business))
-        .filter((business): business is NormalizedBusiness => Boolean(business));
-
+      const results = [...collected.values()].slice(0, target);
       return { provider: this.name, status: results.length ? "success" : "zero-results", results };
     } catch (error) {
       const timedOut = error instanceof DOMException && error.name === "TimeoutError";
-      return { provider: this.name, status: timedOut ? "timeout" : "failed", results: [], errorMessage: timedOut ? "Yelp request timed out." : "Yelp request failed." };
+      const partial = [...collected.values()].slice(0, target);
+      return { provider: this.name, status: partial.length ? "success" : timedOut ? "timeout" : "failed", results: partial, errorMessage: timedOut ? "Yelp request timed out." : "Yelp request failed." };
     }
   }
 }
