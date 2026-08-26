@@ -12,7 +12,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       user: {
         id: auth.userId,
-        email: undefined,
+        // Synthetic email keeps client parsers and UI helpers happy while
+        // public mode is on. Real accounts always have a verified email.
+        email: auth.email,
         name: "Guest workspace",
         role: auth.role,
         organizationId: undefined,

@@ -16,10 +16,13 @@ export type UserRole =
 
 export interface CurrentUser {
   id: string;
-  email: string;
+  /** Present for real accounts. Optional for public-mode guest workspaces. */
+  email?: string;
   name: string;
   role: UserRole;
   organizationId?: string;
+  /** True when VANTAGE_PUBLIC_MODE is on and the visitor is an anonymous owner. */
+  anonymous?: boolean;
 }
 
 export const LOGIN_PATH = "/login";
@@ -27,14 +30,22 @@ const DEFAULT_REDIRECT = "/investigations";
 
 function parseUser(payload: unknown): CurrentUser | null {
   if (!payload || typeof payload !== "object") return null;
-  const user = (payload as { user?: Partial<CurrentUser> }).user;
-  if (!user || typeof user.id !== "string" || typeof user.email !== "string" || typeof user.name !== "string" || typeof user.role !== "string") return null;
+  const user = (payload as { user?: Partial<CurrentUser> & { anonymous?: boolean } }).user;
+  if (!user || typeof user.id !== "string" || typeof user.name !== "string" || typeof user.role !== "string") {
+    return null;
+  }
+
+  const isAnonymous = user.anonymous === true;
+  // Real accounts must have an email string. Guests (public mode) may omit it.
+  if (!isAnonymous && typeof user.email !== "string") return null;
+
   return {
     id: user.id,
-    email: user.email,
+    email: typeof user.email === "string" ? user.email : undefined,
     name: user.name,
     role: user.role as UserRole,
     organizationId: typeof user.organizationId === "string" ? user.organizationId : undefined,
+    anonymous: isAnonymous || undefined,
   };
 }
 
@@ -160,7 +171,7 @@ export function getCurrentPath(): string {
 }
 
 export function getUserInitials(user: Pick<CurrentUser, "name" | "email">): string {
-  const source = user.name?.trim() || user.email;
+  const source = (user.name?.trim() || user.email || "G").trim();
   const parts = source.split(/[\s@._-]+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return source.slice(0, 2).toUpperCase();
