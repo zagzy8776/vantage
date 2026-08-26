@@ -25,10 +25,24 @@ function getAnonymousWorkspaceId(request: NextRequest) {
     || "anon_unscoped";
 }
 
+/**
+ * Free-entry mode until the owner domain + email verification ship.
+ * ON by default. Set VANTAGE_PUBLIC_MODE=false to require real sign-in again.
+ */
+function isPublicModeEnabled(): boolean {
+  return process.env.VANTAGE_PUBLIC_MODE !== "false";
+}
+
 async function getPublicModeContext(request: NextRequest): Promise<AuthContext | null> {
-  if (process.env.VANTAGE_PUBLIC_MODE !== "true") return null;
+  if (!isPublicModeEnabled()) return null;
   const workspaceId = getAnonymousWorkspaceId(request);
-  return { userId: workspaceId, email: `guest+${workspaceId}@vantage.local`, role: "owner", organizationId: undefined, isAnonymous: true };
+  return {
+    userId: workspaceId,
+    email: `guest+${workspaceId}@vantage.local`,
+    role: "owner",
+    organizationId: undefined,
+    isAnonymous: true,
+  };
 }
 
 export async function getAuthContext(request: NextRequest): Promise<AuthContext | null> {
