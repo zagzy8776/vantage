@@ -98,7 +98,7 @@ export interface EvidenceConflict {
 
 /** Default public-site crawl depth — higher = more contact/booking signals found. */
 export const DEFAULT_WEBSITE_RESEARCH_LIMITS: WebsiteResearchLimits = {
-  maxPages: 16,
-  timeoutMs: 30_000,
-  maxBodyCharacters: 750_000,
+  maxPages: 24,
+  timeoutMs: 40_000,
+  maxBodyCharacters: 900_000,
 };
