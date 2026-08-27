@@ -27,29 +27,15 @@ async function loadLead(id: string) {
       status: leads.status,
       websiteStatus: leads.websiteStatus,
       reason: leads.reason,
-      createdAt: leads.createdAt,
-      updatedAt: leads.updatedAt,
       businessId: businesses.id,
-      externalId: businesses.externalId,
-      source: businesses.source,
       name: businesses.name,
       category: businesses.category,
-      address: businesses.address,
       country: businesses.country,
-      region: businesses.region,
       city: businesses.city,
-      area: businesses.area,
-      street: businesses.street,
-      latitude: businesses.latitude,
-      longitude: businesses.longitude,
       phone: businesses.phone,
       website: businesses.website,
       verificationStatus: businesses.verificationStatus,
-      rating: businesses.rating,
-      reviewCount: businesses.reviewCount,
-      priceLevel: businesses.priceLevel,
       discoveredAt: businesses.discoveredAt,
-      businessUpdatedAt: businesses.updatedAt,
     })
     .from(leads)
     .innerJoin(businesses, eq(leads.businessId, businesses.id))
@@ -69,163 +55,110 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
   const evidenceConflicts = await getBusinessEvidenceConflicts(record.businessId).catch(() => []);
   const publicEmail = await getBusinessPublicEmail(record.businessId).catch(() => null);
 
-  const lead = {
-    id: record.leadId,
-    business: {
-      id: record.businessId,
-      name: record.name,
-      category: record.category,
-      location: {
-        country: record.country ?? "Unknown",
-        countryCode: record.country?.slice(0, 2).toUpperCase() ?? "UN",
-        region: record.region,
-        city: record.city ?? "Unknown",
-        area: record.area,
-        street: record.street,
-      },
-      website: record.website,
-      phone: record.phone,
-      email: publicEmail,
-      discoveredAt: record.discoveredAt.toISOString(),
-    },
-    opportunityScore: record.opportunityScore,
-    websiteHealth: record.websiteStatus,
-    status: record.status,
-    lastAnalyzedAt: intelligenceHistory[0]?.createdAt ?? null,
-    reason: record.reason,
-    website: null,
-    websiteAnalysis: latestWebsiteAnalyses[0]
-      ? {
-          businessId: record.businessId,
-          url: latestWebsiteAnalyses[0].url,
-          canonicalUrl: latestWebsiteAnalyses[0].url,
-          normalizedUrl: latestWebsiteAnalyses[0].url,
-          status: latestWebsiteAnalyses[0].status,
-          errorCode: latestWebsiteAnalyses[0].errorCode,
-          analyzedAt: latestWebsiteAnalyses[0].analyzedAt.toISOString(),
-          performanceScore: latestWebsiteAnalyses[0].performanceScore,
-          accessibilityScore: latestWebsiteAnalyses[0].accessibilityScore,
-          bestPracticesScore: latestWebsiteAnalyses[0].bestPracticesScore,
-          seoScore: latestWebsiteAnalyses[0].seoScore,
-          reused: true,
-          technicalHealthScore: null,
-          websiteStatus: record.websiteStatus,
-          evidence: { hasWebsite: Boolean(record.website) },
-        }
-      : null,
-  };
+  const location = [record.city, record.country].filter(Boolean).join(", ") || "—";
+  const websiteAnalysis = latestWebsiteAnalyses[0]
+    ? {
+        businessId: record.businessId,
+        url: latestWebsiteAnalyses[0].url,
+        canonicalUrl: latestWebsiteAnalyses[0].url,
+        normalizedUrl: latestWebsiteAnalyses[0].url,
+        status: latestWebsiteAnalyses[0].status,
+        errorCode: latestWebsiteAnalyses[0].errorCode,
+        analyzedAt: latestWebsiteAnalyses[0].analyzedAt.toISOString(),
+        performanceScore: latestWebsiteAnalyses[0].performanceScore,
+        accessibilityScore: latestWebsiteAnalyses[0].accessibilityScore,
+        bestPracticesScore: latestWebsiteAnalyses[0].bestPracticesScore,
+        seoScore: latestWebsiteAnalyses[0].seoScore,
+        reused: true,
+        technicalHealthScore: null,
+        websiteStatus: record.websiteStatus,
+        evidence: { hasWebsite: Boolean(record.website) },
+      }
+    : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl">
       <div className="flex items-start justify-between gap-4 flex-col sm:flex-row">
-        <div>
-          <div className="flex items-center gap-2 text-xs text-subtle uppercase tracking-wider font-mono mb-2">
-            <span>Opportunity</span>
-            <span>•</span>
-            <span>Research brief</span>
-          </div>
-          <h1 className="text-2xl font-extrabold font-mono">{lead.business.name}</h1>
-          <p className="text-sm text-subtle">
-            {lead.business.category} • {lead.business.location.city}, {lead.business.location.country}
+        <div className="min-w-0">
+          <p className="section-label text-accent mb-1">Lead</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight truncate">{record.name}</h1>
+          <p className="text-sm text-subtle mt-1">
+            {record.category} · {location}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <StatusBadge type="stage" value={lead.status} />
-          <StatusBadge type="health" value={lead.websiteHealth} />
+        <div className="flex items-center gap-3 shrink-0">
+          <OpportunityScore score={record.opportunityScore} size="lg" showLabel />
+          <StatusBadge type="stage" value={record.status} />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        <Card title="Business Overview" subtitle="Customer-facing research summary." className="xl:col-span-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <div>
-              <div className="text-subtle text-xs uppercase">Name</div>
-              <div>{lead.business.name}</div>
-            </div>
-            <div>
-              <div className="text-subtle text-xs uppercase">Category</div>
-              <div>{lead.business.category}</div>
-            </div>
-            <div>
-              <div className="text-subtle text-xs uppercase">Location</div>
-              <div>
-                {lead.business.location.city}, {lead.business.location.country}
-              </div>
-            </div>
-            <div>
-              <div className="text-subtle text-xs uppercase">Website</div>
-              {lead.business.website ? (
-                <a className="text-accent hover:underline" href={lead.business.website} target="_blank" rel="noopener noreferrer">
-                  {formatDomain(lead.business.website)}
-                </a>
-              ) : (
-                <div>No website</div>
-              )}
-            </div>
-            <div>
-              <div className="text-subtle text-xs uppercase">Phone</div>
-              <div>{lead.business.phone ?? "—"}</div>
-            </div>
-            <div>
-              <div className="text-subtle text-xs uppercase">Email</div>
-              <div>{lead.business.email ?? "No public email found"}</div>
-            </div>
-            <div>
-              <div className="text-subtle text-xs uppercase">Research status</div>
-              <div>{lead.status === "discovered" ? "Newly researched" : lead.status}</div>
-            </div>
-            <div>
-              <div className="text-subtle text-xs uppercase">Discovered</div>
-              <div>{formatDate(lead.business.discoveredAt)}</div>
-            </div>
-            <div>
-              <div className="text-subtle text-xs uppercase">Last analyzed</div>
-              <div>{formatDate(lead.lastAnalyzedAt)}</div>
-            </div>
+      <Card title="Why this lead">
+        <p className="text-sm text-subtle leading-relaxed">{record.reason}</p>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+          <div>
+            <div className="text-[10px] uppercase text-subtle font-mono">Website</div>
+            {record.website ? (
+              <a className="text-accent hover:underline" href={record.website} target="_blank" rel="noopener noreferrer">
+                {formatDomain(record.website)}
+              </a>
+            ) : (
+              <span>No website</span>
+            )}
           </div>
-        </Card>
-        <Card title="Opportunity Signal" subtitle="A quick prioritization signal for this business.">
-          <div className="flex items-center justify-center py-3">
-            <OpportunityScore score={lead.opportunityScore} size="xl" showLabel />
+          <div>
+            <div className="text-[10px] uppercase text-subtle font-mono">Phone</div>
+            <div>{record.phone ?? "—"}</div>
           </div>
-        </Card>
-      </div>
+          <div>
+            <div className="text-[10px] uppercase text-subtle font-mono">Email</div>
+            <div className="break-all">{publicEmail ?? "No public email found"}</div>
+          </div>
+        </div>
+      </Card>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        <Card title="Why This Lead?" subtitle="What VANTAGE sees as the immediate reason to investigate further." className="xl:col-span-2">
-          <p className="text-sm text-subtle leading-6">{lead.reason}</p>
-        </Card>
-        <WebsiteAnalysisPanel
-          businessId={lead.business.id}
-          websiteUrl={lead.business.website}
-          websiteStatus={lead.websiteHealth}
-          initialAnalysis={lead.websiteAnalysis ?? null}
-        />
-      </div>
-
-      <LeadIntelligencePanel
-        leadId={lead.id}
-        initialScore={lead.opportunityScore}
-        initialIntelligence={intelligenceHistory[0] ?? null}
-        history={intelligenceHistory}
-      />
-      <EvidenceOverview
-        evidence={evidence}
-        conflicts={evidenceConflicts}
-        aiConflicts={intelligenceHistory.flatMap((item) => item.validationIssues.filter((issue) => issue.type === "contradiction"))}
-        verificationStatus={record.verificationStatus}
-      />
       <OutreachPanel
-        leadId={lead.id}
-        initialPhone={lead.business.phone}
-        initialEmail={lead.business.email}
-        initialStatus={lead.status}
+        leadId={record.leadId}
+        initialPhone={record.phone}
+        initialEmail={publicEmail}
+        initialStatus={record.status}
       />
-      <div>
-        <Link href="/leads" className="text-xs text-accent hover:underline">
-          ← Back to leads
-        </Link>
-      </div>
+
+      <details className="group border border-border rounded-xl bg-surface/90 open:shadow-card">
+        <summary className="cursor-pointer list-none px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-foreground">More research</div>
+            <p className="text-xs text-subtle mt-0.5">Website scores, AI notes, and evidence (optional)</p>
+          </div>
+          <span className="text-xs font-mono text-accent group-open:rotate-180 transition-transform">▼</span>
+        </summary>
+        <div className="border-t border-border p-4 sm:p-5 space-y-6">
+          <WebsiteAnalysisPanel
+            businessId={record.businessId}
+            websiteUrl={record.website}
+            websiteStatus={record.websiteStatus}
+            initialAnalysis={websiteAnalysis}
+          />
+          <LeadIntelligencePanel
+            leadId={record.leadId}
+            initialScore={record.opportunityScore}
+            initialIntelligence={intelligenceHistory[0] ?? null}
+            history={intelligenceHistory}
+          />
+          <EvidenceOverview
+            evidence={evidence}
+            conflicts={evidenceConflicts}
+            aiConflicts={intelligenceHistory.flatMap((item) =>
+              item.validationIssues.filter((issue) => issue.type === "contradiction"),
+            )}
+            verificationStatus={record.verificationStatus}
+          />
+          <p className="text-[11px] text-subtle">Discovered {formatDate(record.discoveredAt.toISOString())}</p>
+        </div>
+      </details>
+
+      <Link href="/leads" className="text-xs text-accent hover:underline inline-block">
+        ← Back to leads
+      </Link>
     </div>
   );
 }

@@ -1,55 +1,46 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { evidenceItems } from "@/lib/db/schema";
-import { createId } from "@/lib/ids";
+import { assertDeepDiscoverySchemaReady } from "@/lib/db/migration-check";
+import { businesses, evidenceConflicts, evidenceItems } from "@/lib/db/schema";
+import { dedupeEvidence } from "./dedupe";
 import { researchWebsite } from "./collector";
-import { detectEvidenceConflicts } from "./conflicts";
+import { evidenceFreshness, findEvidenceConflicts } from "./conflicts";
 import { firecrawlWebsiteResearchProvider } from "@/providers/website-research/firecrawl";
-import type { EvidenceConflict, EvidenceItem, WebsiteResearchResult } from "./types";
+import { verificationStatusFromEvidence } from "./confidence";
+import type { EvidenceItem, WebsiteResearchResult } from "./types";
 
 export async function storeEvidence(items: EvidenceItem[], options?: { runId?: string }) {
   if (!items.length) return;
+  await assertDeepDiscoverySchemaReady();
   const db = getDb();
-  const rows = items.map((item) => ({
-    id: item.id ?? createId("ev"),
-    businessId: item.businessId,
-    category: item.category,
-    statement: item.statement,
-    value: item.value ?? null,
-    sourceType: item.sourceType,
-    sourceUrl: item.sourceUrl ?? null,
-    confidence: item.confidence,
-    observedAt: new Date(item.observedAt),
-    metadata: item.metadata ?? null,
-    searchRunId: options?.runId ?? null,
-  }));
-  await db.insert(evidenceItems).values(rows).onConflictDoNothing();
-}
-
-export async function getBusinessEvidence(businessId: string): Promise<EvidenceItem[]> {
-  const rows = await getDb()
-    .select()
-    .from(evidenceItems)
-    .where(eq(evidenceItems.businessId, businessId))
-    .orderBy(desc(evidenceItems.observedAt))
-    .limit(200);
-  return rows.map((row) => ({
-    id: row.id,
-    businessId: row.businessId,
-    category: row.category as EvidenceItem["category"],
-    statement: row.statement,
-    value: row.value ?? undefined,
-    sourceType: row.sourceType as EvidenceItem["sourceType"],
-    sourceUrl: row.sourceUrl ?? undefined,
-    confidence: row.confidence as EvidenceItem["confidence"],
-    observedAt: row.observedAt.toISOString(),
-    metadata: (row.metadata as Record<string, unknown> | null) ?? undefined,
-  }));
-}
-
-export async function getBusinessEvidenceConflicts(businessId: string): Promise<EvidenceConflict[]> {
-  const evidence = await getBusinessEvidence(businessId);
-  return detectEvidenceConflicts(evidence);
+  const normalized = dedupeEvidence(items);
+  for (const item of normalized) {
+    await db.insert(evidenceItems).values({
+      id: item.id ?? `ev_${item.businessId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      businessId: item.businessId,
+      runId: options?.runId ?? null,
+      category: item.category,
+      statement: item.statement,
+      value: item.value ?? null,
+      sourceType: item.sourceType,
+      sourceUrl: item.sourceUrl ?? null,
+      confidence: item.confidence,
+      observedAt: new Date(item.observedAt),
+      metadata: item.metadata ?? null,
+    });
+  }
+  const conflicts = findEvidenceConflicts(normalized);
+  for (const conflict of conflicts) {
+    await db.insert(evidenceConflicts).values({
+      id: `conf_${conflict.businessId}_${conflict.category}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      businessId: conflict.businessId,
+      category: conflict.category,
+      fieldKey: conflict.fieldKey,
+      status: conflict.status,
+      items: conflict.items,
+      observedAt: new Date(conflict.observedAt),
+    });
+  }
 }
 
 export async function enrichBusinessWebsite(
@@ -62,6 +53,11 @@ export async function enrichBusinessWebsite(
     timeoutMs: limits?.timeoutMs,
   });
   await storeEvidence(result.evidence, { runId: limits?.runId });
+  await assertDeepDiscoverySchemaReady();
+  await getDb()
+    .update(businesses)
+    .set({ verificationStatus: result.verificationStatus, updatedAt: new Date() })
+    .where(eq(businesses.id, businessId));
   return result;
 }
 
@@ -73,5 +69,39 @@ export async function enrichBusinessWebsiteWithFirecrawl(
 ): Promise<WebsiteResearchResult> {
   const result = await firecrawlWebsiteResearchProvider.research({ businessId, url: websiteUrl, maxPages });
   await storeEvidence(result.evidence, { runId });
-  return result;
+  await assertDeepDiscoverySchemaReady();
+  const verificationStatus = verificationStatusFromEvidence(result.evidence);
+  await getDb()
+    .update(businesses)
+    .set({ verificationStatus, updatedAt: new Date() })
+    .where(eq(businesses.id, businessId));
+  return {
+    businessId,
+    websiteUrl,
+    pagesFetched: result.pagesFetched,
+    evidence: result.evidence,
+    verificationStatus,
+    errors: result.errors,
+  };
 }
+
+export async function getBusinessEvidence(businessId: string, limit = 100) {
+  const rows = await getDb()
+    .select()
+    .from(evidenceItems)
+    .where(eq(evidenceItems.businessId, businessId))
+    .orderBy(desc(evidenceItems.observedAt))
+    .limit(limit);
+  return rows;
+}
+
+export async function getBusinessEvidenceConflicts(businessId: string, limit = 50) {
+  return getDb()
+    .select()
+    .from(evidenceConflicts)
+    .where(eq(evidenceConflicts.businessId, businessId))
+    .orderBy(desc(evidenceConflicts.observedAt))
+    .limit(limit);
+}
+
+export { evidenceFreshness };
