@@ -5,9 +5,6 @@ import type { AuthContext } from "@/auth/types";
 
 export { searchRunAccess } from "@/lib/db/schema";
 
-/** Shared guest id used before stable workspace cookies existed. */
-export const LEGACY_ANON_OWNER_ID = "anon_unscoped";
-
 export async function recordSearchRunOwner(input: {
   searchRunId: string;
   ownerId: string;
@@ -37,28 +34,12 @@ export async function getSearchWorkspaceId(searchRunId: string): Promise<string 
   return row?.ownerId ?? null;
 }
 
-/**
- * Owner ids a caller may read. Anonymous guests also see the legacy shared
- * workspace so older scans (pre stable cookie) still appear in History.
- */
-export function visibleOwnerIds(auth: AuthContext): string[] {
-  if (auth.isAnonymous) {
-    return Array.from(new Set([auth.userId, LEGACY_ANON_OWNER_ID]));
-  }
-  return [auth.userId];
-}
-
+/** History is private: each guest only sees scans they started. */
 export function historyVisibilityFilter(auth: AuthContext) {
   if (auth.organizationId) {
     return or(
       eq(searchRunAccess.ownerId, auth.userId),
       eq(searchRunAccess.organizationId, auth.organizationId),
-    );
-  }
-  if (auth.isAnonymous) {
-    return or(
-      eq(searchRunAccess.ownerId, auth.userId),
-      eq(searchRunAccess.ownerId, LEGACY_ANON_OWNER_ID),
     );
   }
   return eq(searchRunAccess.ownerId, auth.userId);
@@ -73,10 +54,8 @@ export async function canAccessSearchRun(
     .from(searchRunAccess)
     .where(eq(searchRunAccess.searchRunId, searchRunId));
 
-  const allowedOwners = new Set(visibleOwnerIds(auth));
-
   return rows.some((access) => {
-    if (allowedOwners.has(access.ownerId)) return true;
+    if (access.ownerId === auth.userId) return true;
     if (access.organizationId && access.organizationId === auth.organizationId) {
       return ["owner", "admin", "analyst", "reviewer", "client"].includes(auth.role);
     }
@@ -87,9 +66,6 @@ export async function canAccessSearchRun(
 function tenantVisibilitySql(auth: AuthContext, ownerColumn: string, organizationColumn: string) {
   if (auth.organizationId) {
     return sql`${sql.raw(ownerColumn)} = ${auth.userId} OR ${sql.raw(organizationColumn)} = ${auth.organizationId}`;
-  }
-  if (auth.isAnonymous) {
-    return sql`(${sql.raw(ownerColumn)} = ${auth.userId} OR ${sql.raw(ownerColumn)} = ${LEGACY_ANON_OWNER_ID})`;
   }
   return sql`${sql.raw(ownerColumn)} = ${auth.userId}`;
 }
