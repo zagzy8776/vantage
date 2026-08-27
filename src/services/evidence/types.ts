@@ -1,33 +1,7 @@
 import type { BusinessVerificationStatus } from "@/lib/types";
 
-export type EvidenceCategory =
-  | "business_identity"
-  | "business_category"
-  | "location"
-  | "contact"
-  | "website"
-  | "services"
-  | "products"
-  | "pricing"
-  | "booking"
-  | "ecommerce"
-  | "social_presence"
-  | "opening_hours"
-  | "about"
-  | "technology"
-  | "customer_signal"
-  | "brand_signal"
-  | "content_signal";
-export type EvidenceSourceType =
-  | "foursquare"
-  | "yelp"
-  | "tavily"
-  | "exa"
-  | "firecrawl"
-  | "pagespeed"
-  | "website"
-  | "public_page"
-  | "search_result";
+export type EvidenceCategory = "business_identity" | "business_category" | "location" | "contact" | "website" | "services" | "products" | "pricing" | "booking" | "ecommerce" | "social_presence" | "opening_hours" | "about" | "technology" | "customer_signal" | "brand_signal" | "content_signal";
+export type EvidenceSourceType = "foursquare" | "yelp" | "tavily" | "exa" | "firecrawl" | "pagespeed" | "website" | "public_page" | "search_result";
 export type EvidenceConfidence = "high" | "medium" | "low";
 
 export interface EvidenceItem {
@@ -53,14 +27,7 @@ export interface EvidenceSearchQuery {
   query?: string;
 }
 
-export type EvidenceSearchStatus =
-  | "success"
-  | "zero-results"
-  | "rate-limited"
-  | "unavailable"
-  | "malformed-response"
-  | "timeout"
-  | "failed";
+export type EvidenceSearchStatus = "success" | "zero-results" | "rate-limited" | "unavailable" | "malformed-response" | "timeout" | "failed";
 
 export interface EvidenceSearchResultItem {
   title: string;
@@ -79,23 +46,10 @@ export interface EvidenceSearchResult {
   queryCount: number;
   errorMessage?: string;
   httpStatus?: number;
-  failureCategory?:
-    | "authentication"
-    | "rate_limit"
-    | "provider_error"
-    | "timeout"
-    | "network"
-    | "malformed_response"
-    | "configuration";
+  failureCategory?: "authentication" | "rate_limit" | "provider_error" | "timeout" | "network" | "malformed_response" | "configuration";
   providerCode?: string;
   durationMs?: number;
-  providerDiagnostics?: Array<{
-    httpStatus?: number;
-    failureCategory?: string;
-    providerCode?: string;
-    safeMessage?: string;
-    durationMs?: number;
-  }>;
+  providerDiagnostics?: Array<{ httpStatus?: number; failureCategory?: string; providerCode?: string; safeMessage?: string; durationMs?: number }>;
 }
 
 export interface EvidenceSearchProvider {
@@ -122,20 +76,22 @@ export interface WebsiteResearchResult {
 export interface WebsiteResearchDiagnostic {
   domain: string;
   httpStatus?: number;
-  failureCategory?:
-    | "authentication"
-    | "request_schema"
-    | "url_validation"
-    | "rate_limit"
-    | "timeout"
-    | "provider_error"
-    | "network"
-    | "unknown";
+  failureCategory?: "authentication" | "request_schema" | "url_validation" | "rate_limit" | "timeout" | "provider_error" | "network" | "unknown";
   providerCode?: string;
   safeMessage?: string;
+  requestConstructed: boolean;
+  timedOut?: boolean;
+  durationMs: number;
 }
 
-export interface CollectedEvidenceBatch {
+export type EvidenceFreshness = "fresh" | "aging" | "stale";
+export type EvidenceConflictStatus = "none" | "conflicting" | "requires-review";
+
+export interface EvidenceConflict {
+  businessId: string;
+  category: EvidenceCategory;
+  fieldKey: string;
+  status: EvidenceConflictStatus;
   items: EvidenceItem[];
   observedAt: string;
 }
