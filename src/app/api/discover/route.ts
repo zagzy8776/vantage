@@ -4,6 +4,11 @@ import { validateDiscoveryQuery } from "@/lib/discover/validation";
 import { createSearchRun } from "@/services/search-runs/service";
 import { claimSearchRunForRecovery, releaseSearchRunLock } from "@/services/search-runs/service";
 import { recordSearchRunOwner } from "@/services/search-runs/access";
+import {
+  findActiveMatchingRun,
+  findReusableCompletedRun,
+  forkCachedSearchRun,
+} from "@/services/search-runs/cache";
 import { discoveryRecoveryWorkflow } from "@/workflows/discovery-recovery";
 import { requireRole } from "@/auth/middleware";
 
@@ -27,36 +32,86 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Persist the scan first. Never delete it if the background worker fails —
-    // the user must still see it under Your scans and can Retry.
-    const runId = await createSearchRun(validation.query);
+    const query = validation.query;
+
+    // 1) Reuse a recent completed scan from the DB (no provider API spend).
+    //    Results are private to this guest and filtered against businesses they already saw.
+    try {
+      const cached = await findReusableCompletedRun(query);
+      if (cached) {
+        const forked = await forkCachedSearchRun({
+          sourceRunId: cached.id,
+          query,
+          ownerId: auth.userId,
+          organizationId: auth.organizationId,
+        });
+        if (forked && forked.resultCount > 0) {
+          console.info(
+            JSON.stringify({
+              diagnostic: "search_run_cache_hit",
+              runId: forked.runId,
+              sourceRunId: forked.sourceRunId,
+              resultCount: forked.resultCount,
+              ownerId: auth.userId,
+            }),
+          );
+          return NextResponse.json(
+            {
+              runId: forked.runId,
+              status: "completed",
+              cacheHit: true,
+              message: "Loaded from saved research — no new provider calls.",
+            },
+            { status: 200 },
+          );
+        }
+        // Cache existed but this guest already saw every business → fall through to live search for new ones.
+        console.info(
+          JSON.stringify({
+            diagnostic: "search_run_cache_exhausted",
+            sourceRunId: cached.id,
+            ownerId: auth.userId,
+          }),
+        );
+      }
+    } catch (cacheError) {
+      console.error(
+        JSON.stringify({
+          diagnostic: "search_run_cache_failed",
+          message: cacheError instanceof Error ? cacheError.message : String(cacheError),
+        }),
+      );
+    }
+
+    // 2) Persist a private run for this guest.
+    const runId = await createSearchRun(query);
     await recordSearchRunOwner({
       searchRunId: runId,
       ownerId: auth.userId,
       organizationId: auth.organizationId,
     });
 
+    // 3) If the same market is already being researched live, still save this guest's run
+    //    but note that providers may already be warm — recovery/workflow handles work.
+    const active = await findActiveMatchingRun(query).catch(() => null);
+
     const workerId = newWorkerId();
     const claimed = await claimSearchRunForRecovery(runId, workerId, 0);
 
     if (!claimed) {
-      // Run is saved; another worker may already own it. Surface the id.
       return NextResponse.json(
         {
           runId,
           status: "queued",
           warning: "Scan saved. Background worker will pick it up shortly.",
+          activeMatchRunId: active?.id,
         },
         { status: 202 },
       );
     }
 
     try {
-      const workflowRun = await start(discoveryRecoveryWorkflow, [
-        validation.query,
-        runId,
-        workerId,
-      ]);
+      const workflowRun = await start(discoveryRecoveryWorkflow, [query, runId, workerId]);
       console.info(
         JSON.stringify({
           diagnostic: "search_run_workflow_started",
@@ -65,24 +120,32 @@ export async function POST(request: NextRequest) {
           worker: workerId,
           anonymous: Boolean(auth.isAnonymous),
           ownerId: auth.userId,
+          activeMatchRunId: active?.id ?? null,
         }),
       );
 
       return NextResponse.json(
-        { runId, status: "queued", workflowRunId: workflowRun.runId },
+        {
+          runId,
+          status: "queued",
+          workflowRunId: workflowRun.runId,
+          ...(active
+            ? {
+                warning:
+                  "Similar research is already running. Your scan is saved and will prioritize businesses you have not seen yet.",
+              }
+            : {}),
+        },
         { status: 202 },
       );
     } catch (workflowError) {
-      // Keep the scan. Release the lock so Retry / sweep can reclaim it.
       await releaseSearchRunLock(runId, workerId).catch(() => undefined);
       console.error(
         JSON.stringify({
           diagnostic: "search_run_workflow_start_failed",
           runId,
           message:
-            workflowError instanceof Error
-              ? workflowError.message
-              : String(workflowError),
+            workflowError instanceof Error ? workflowError.message : String(workflowError),
         }),
       );
       return NextResponse.json(
