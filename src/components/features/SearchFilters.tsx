@@ -24,10 +24,10 @@ const initialFilters: DiscoverFilters = {
   searchSource: "best-available",
   websiteStatus: "any",
   minScore: 0,
-  depth: "standard",
+  depth: "deep",
   maxResults: 50,
   queryExpansion: true,
-  evidenceEnrichment: false,
+  evidenceEnrichment: true,
   webDiscoveryProvider: "best-available",
 };
 
@@ -173,11 +173,11 @@ export function SearchFilters({ onSearch, isLoading = false, isDisabled = false 
                   onChange={(event) => setFilters({ ...filters, evidenceEnrichment: event.target.checked })}
                   className="accent-accent"
                 />
-                Evidence enrichment
+                Evidence enrichment (deeper crawl)
               </label>
             </div>
             <p className="text-[11px] text-subtle">
-              VANTAGE picks the best available sources and removes duplicates before showing results.
+              Deep + enrichment crawls more pages (contact, about, booking) to find emails and opportunity signals.
             </p>
           </div>
         )}
