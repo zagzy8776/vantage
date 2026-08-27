@@ -5,7 +5,6 @@ import { notFound } from "next/navigation";
 import { OpportunityScore } from "@/components/ui/OpportunityScore";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { formatDate, formatDomain } from "@/lib/utils";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
@@ -16,6 +15,8 @@ import { LeadIntelligencePanel } from "@/components/features/LeadIntelligencePan
 import { getLeadIntelligenceHistory } from "@/services/intelligence/lead-analysis";
 import { getBusinessEvidence, getBusinessEvidenceConflicts } from "@/services/evidence/service";
 import { EvidenceOverview } from "@/components/features/EvidenceOverview";
+import { OutreachPanel } from "@/components/features/OutreachPanel";
+import { getBusinessPublicEmail } from "@/services/outreach/draft";
 
 async function loadLead(id: string) {
   const db = getDb();
@@ -66,6 +67,7 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
   const intelligenceHistory = await getLeadIntelligenceHistory(record.leadId).catch(() => []);
   const evidence = await getBusinessEvidence(record.businessId).catch(() => []);
   const evidenceConflicts = await getBusinessEvidenceConflicts(record.businessId).catch(() => []);
+  const publicEmail = await getBusinessPublicEmail(record.businessId).catch(() => null);
 
   const lead = {
     id: record.leadId,
@@ -83,6 +85,7 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
       },
       website: record.website,
       phone: record.phone,
+      email: publicEmail,
       discoveredAt: record.discoveredAt.toISOString(),
     },
     opportunityScore: record.opportunityScore,
@@ -116,31 +119,82 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-col sm:flex-row">
         <div>
-          <div className="flex items-center gap-2 text-xs text-subtle uppercase tracking-wider font-mono mb-2"><span>Opportunity</span><span>•</span><span>Research brief</span></div>
+          <div className="flex items-center gap-2 text-xs text-subtle uppercase tracking-wider font-mono mb-2">
+            <span>Opportunity</span>
+            <span>•</span>
+            <span>Research brief</span>
+          </div>
           <h1 className="text-2xl font-extrabold font-mono">{lead.business.name}</h1>
-          <p className="text-sm text-subtle">{lead.business.category} • {lead.business.location.city}, {lead.business.location.country}</p>
+          <p className="text-sm text-subtle">
+            {lead.business.category} • {lead.business.location.city}, {lead.business.location.country}
+          </p>
         </div>
-        <div className="flex items-center gap-2"><StatusBadge type="stage" value={lead.status} /><StatusBadge type="health" value={lead.websiteHealth} /></div>
+        <div className="flex items-center gap-2">
+          <StatusBadge type="stage" value={lead.status} />
+          <StatusBadge type="health" value={lead.websiteHealth} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <Card title="Business Overview" subtitle="Customer-facing research summary." className="xl:col-span-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <div><div className="text-subtle text-xs uppercase">Name</div><div>{lead.business.name}</div></div>
-            <div><div className="text-subtle text-xs uppercase">Category</div><div>{lead.business.category}</div></div>
-            <div><div className="text-subtle text-xs uppercase">Location</div><div>{lead.business.location.city}, {lead.business.location.country}</div></div>
-            <div><div className="text-subtle text-xs uppercase">Website</div><a className="text-accent hover:underline" href={lead.business.website ?? "#"} target="_blank" rel="noopener noreferrer">{lead.business.website ? formatDomain(lead.business.website) : "No website"}</a></div>
-            <div><div className="text-subtle text-xs uppercase">Phone</div><div>{lead.business.phone ?? "—"}</div></div>
-            <div><div className="text-subtle text-xs uppercase">Research status</div><div>{lead.status === "discovered" ? "Newly researched" : lead.status}</div></div>
-            <div><div className="text-subtle text-xs uppercase">Discovered</div><div>{formatDate(lead.business.discoveredAt)}</div></div>
-            <div><div className="text-subtle text-xs uppercase">Last analyzed</div><div>{formatDate(lead.lastAnalyzedAt)}</div></div>
+            <div>
+              <div className="text-subtle text-xs uppercase">Name</div>
+              <div>{lead.business.name}</div>
+            </div>
+            <div>
+              <div className="text-subtle text-xs uppercase">Category</div>
+              <div>{lead.business.category}</div>
+            </div>
+            <div>
+              <div className="text-subtle text-xs uppercase">Location</div>
+              <div>
+                {lead.business.location.city}, {lead.business.location.country}
+              </div>
+            </div>
+            <div>
+              <div className="text-subtle text-xs uppercase">Website</div>
+              {lead.business.website ? (
+                <a className="text-accent hover:underline" href={lead.business.website} target="_blank" rel="noopener noreferrer">
+                  {formatDomain(lead.business.website)}
+                </a>
+              ) : (
+                <div>No website</div>
+              )}
+            </div>
+            <div>
+              <div className="text-subtle text-xs uppercase">Phone</div>
+              <div>{lead.business.phone ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-subtle text-xs uppercase">Email</div>
+              <div>{lead.business.email ?? "No public email found"}</div>
+            </div>
+            <div>
+              <div className="text-subtle text-xs uppercase">Research status</div>
+              <div>{lead.status === "discovered" ? "Newly researched" : lead.status}</div>
+            </div>
+            <div>
+              <div className="text-subtle text-xs uppercase">Discovered</div>
+              <div>{formatDate(lead.business.discoveredAt)}</div>
+            </div>
+            <div>
+              <div className="text-subtle text-xs uppercase">Last analyzed</div>
+              <div>{formatDate(lead.lastAnalyzedAt)}</div>
+            </div>
           </div>
         </Card>
-        <Card title="Opportunity Signal" subtitle="A quick prioritization signal for this business."><div className="flex items-center justify-center py-3"><OpportunityScore score={lead.opportunityScore} size="xl" showLabel /></div></Card>
+        <Card title="Opportunity Signal" subtitle="A quick prioritization signal for this business.">
+          <div className="flex items-center justify-center py-3">
+            <OpportunityScore score={lead.opportunityScore} size="xl" showLabel />
+          </div>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        <Card title="Why This Lead?" subtitle="What VANTAGE sees as the immediate reason to investigate further." className="xl:col-span-2"><p className="text-sm text-subtle leading-6">{lead.reason}</p></Card>
+        <Card title="Why This Lead?" subtitle="What VANTAGE sees as the immediate reason to investigate further." className="xl:col-span-2">
+          <p className="text-sm text-subtle leading-6">{lead.reason}</p>
+        </Card>
         <WebsiteAnalysisPanel
           businessId={lead.business.id}
           websiteUrl={lead.business.website}
@@ -149,10 +203,29 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
         />
       </div>
 
-      <LeadIntelligencePanel leadId={lead.id} initialScore={lead.opportunityScore} initialIntelligence={intelligenceHistory[0] ?? null} history={intelligenceHistory} />
-      <EvidenceOverview evidence={evidence} conflicts={evidenceConflicts} aiConflicts={intelligenceHistory.flatMap((item) => item.validationIssues.filter((issue) => issue.type === "contradiction"))} verificationStatus={record.verificationStatus} />
-      <Card title="Outreach" subtitle="Personalized outreach will be available after qualification."><div className="flex items-start justify-between gap-4 flex-col sm:flex-row"><p className="text-sm text-subtle">Reserved for future personalized outreach drafts.</p><Button disabled variant="secondary">Generate Outreach Draft</Button></div></Card>
-      <div><Link href="/leads" className="text-xs text-accent hover:underline">← Back to leads</Link></div>
+      <LeadIntelligencePanel
+        leadId={lead.id}
+        initialScore={lead.opportunityScore}
+        initialIntelligence={intelligenceHistory[0] ?? null}
+        history={intelligenceHistory}
+      />
+      <EvidenceOverview
+        evidence={evidence}
+        conflicts={evidenceConflicts}
+        aiConflicts={intelligenceHistory.flatMap((item) => item.validationIssues.filter((issue) => issue.type === "contradiction"))}
+        verificationStatus={record.verificationStatus}
+      />
+      <OutreachPanel
+        leadId={lead.id}
+        initialPhone={lead.business.phone}
+        initialEmail={lead.business.email}
+        initialStatus={lead.status}
+      />
+      <div>
+        <Link href="/leads" className="text-xs text-accent hover:underline">
+          ← Back to leads
+        </Link>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { dedupeEvidence } from "./dedupe";
 import { normalizeEvidenceItem, normalizeEvidenceText } from "./normalizer";
 import type { EvidenceItem, WebsiteResearchLimits, WebsiteResearchResult } from "./types";
 import { DEFAULT_WEBSITE_RESEARCH_LIMITS } from "./types";
+import { extractEmailsFromHtml } from "@/lib/outreach/emails";
 
 interface LinkCandidate { href: string; label: string; }
 
@@ -106,7 +107,12 @@ function evidenceForSignals(businessId: string, pageUrl: string, html: string, s
   if (description) add("about", `Public page description: ${description}`, description);
   if (/<form\b/i.test(html) || /contact|inquiry|message us/i.test(normalizedText)) add("contact", "A public contact form or contact language is present on the page.");
   if (/(?:\+?\d[\d\s().-]{6,}\d)/.test(text)) add("contact", "A public telephone number appears on the page.");
-  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) add("contact", "A public email address appears on the page.");
+
+  const emails = extractEmailsFromHtml(html);
+  for (const email of emails.slice(0, 5)) {
+    add("contact", `Public email address found: ${email}`, email, true, { email });
+  }
+
   if (/(booking|book now|appointment|reserve|reservation|schedule)/i.test(normalizedText)) add("booking", "A public booking, appointment, reservation, or scheduling signal is present on the page.");
   if (/(cart|checkout|add to cart|shop now|buy now|product[s]?|\$\s?\d+|€\s?\d+|£\s?\d+)/i.test(normalizedText)) add("ecommerce", "Public shopping, checkout, product, or price signals are present on the page.");
   if (/(service[s]?|menu|what we offer|solutions|treatments)/i.test(normalizedText)) add("services", "A public services or offering signal is present on the page.");
