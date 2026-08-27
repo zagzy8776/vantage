@@ -18,23 +18,19 @@ export function Card({
   return (
     <div
       className={cn(
-        "bg-surface border border-border rounded-lg shadow-card flex flex-col transition-all",
+        "bg-surface/90 border border-border rounded-xl shadow-card flex flex-col transition-colors hover:border-border-strong/80",
         className
       )}
       {...props}
     >
       {(title || subtitle || headerAction) && (
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border bg-surface-2/30">
-          <div className="flex flex-col min-w-0">
+        <div className="flex items-start justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-border/70">
+          <div className="flex flex-col min-w-0 gap-0.5">
             {title && (
-              <h3 className="text-sm font-semibold text-foreground tracking-tight">
-                {title}
-              </h3>
+              <h3 className="text-sm font-semibold text-foreground tracking-tight">{title}</h3>
             )}
             {subtitle && (
-              <p className="text-[10px] sm:text-xs text-subtle mt-0.5 leading-tight truncate">
-                {subtitle}
-              </p>
+              <p className="text-xs text-subtle leading-snug">{subtitle}</p>
             )}
           </div>
           {headerAction && <div className="flex items-center gap-2 shrink-0">{headerAction}</div>}

@@ -6,21 +6,18 @@
   :root {
     /*
      * VANTAGE design tokens — dark-first, single source of truth.
-     * HSL channel values consumed by `tailwind.config.ts`. Re-theme the
-     * product by editing this block only; never hard-code colors in
-     * components.
      */
-    --background: 220 18% 5%;
-    --surface: 220 16% 7%;
-    --surface-2: 220 14% 11%;
-    --border: 220 12% 15%;
-    --border-strong: 220 11% 22%;
+    --background: 222 22% 6%;
+    --surface: 222 18% 9%;
+    --surface-2: 222 16% 12%;
+    --border: 222 12% 16%;
+    --border-strong: 222 12% 24%;
 
-    --foreground: 218 28% 93%;
-    --muted: 218 12% 64%;
-    --subtle: 218 10% 45%;
+    --foreground: 210 30% 96%;
+    --muted: 215 14% 68%;
+    --subtle: 215 10% 48%;
 
-    --accent: 43 84% 58%;
+    --accent: 42 96% 56%;
     --accent-foreground: 30 40% 8%;
 
     --success: 158 64% 52%;
@@ -28,12 +25,13 @@
     --danger: 0 72% 62%;
     --info: 205 89% 63%;
 
-    /* Opportunity-score severity scale. */
     --score-exceptional: 158 72% 50%;
     --score-high: 109 58% 51%;
     --score-promising: 40 92% 55%;
     --score-moderate: 24 90% 60%;
     --score-low: 220 9% 55%;
+
+    --radius: 0.75rem;
   }
 
   *,
@@ -51,13 +49,16 @@
   body {
     @apply bg-background text-foreground antialiased;
     text-rendering: optimizeLegibility;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--accent) / 0.06), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, hsl(222 40% 20% / 0.25), transparent);
+    background-attachment: fixed;
   }
 
   ::selection {
     background: hsl(var(--accent) / 0.3);
   }
 
-  /* Slim, unobtrusive scrollbars for a dense dashboard. */
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -71,14 +72,12 @@
     background: transparent;
   }
 
-  /* Firefox scrollbar */
   * {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border-strong)) transparent;
   }
 }
 
-/* Hide scrollbar for Firefox in modal/scroll containers */
 .no-scrollbar {
   scrollbar-width: none;
 }
@@ -86,18 +85,30 @@
   display: none;
 }
 
+@layer components {
+  .panel {
+    @apply bg-surface/80 border border-border rounded-xl shadow-card backdrop-blur-sm;
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between gap-3 px-4 py-3 border-b border-border/80;
+  }
+
+  .section-label {
+    @apply text-[10px] font-mono font-semibold uppercase tracking-[0.16em] text-subtle;
+  }
+}
+
 @layer utilities {
   .tabular {
     font-variant-numeric: tabular-nums;
   }
 
-  /* Custom backdrop for modals (glass alternative) */
   .modal-backdrop {
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
   }
 
-  /* Text truncation utilities */
   .truncate-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -105,7 +116,6 @@
     overflow: hidden;
   }
 
-  /* Reduce motion preference */
   @media (prefers-reduced-motion: reduce) {
     * {
       animation-duration: 0.01ms !important;
@@ -114,4 +124,3 @@
     }
   }
 }
-

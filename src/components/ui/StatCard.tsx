@@ -26,18 +26,14 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "bg-surface border border-border rounded-lg p-4 sm:p-5 flex flex-col justify-between transition-all hover:border-border-strong group",
+        "bg-surface/90 border border-border rounded-xl p-4 sm:p-5 flex flex-col justify-between transition-all hover:border-accent/25 hover:bg-surface",
         className
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-medium text-muted uppercase tracking-wider">
-          {title}
-        </p>
+        <p className="text-[11px] font-medium text-muted uppercase tracking-[0.12em]">{title}</p>
         {icon && (
-          <div className="p-2 rounded bg-surface-2 text-subtle group-hover:text-accent transition-colors">
-            {icon}
-          </div>
+          <div className="p-2 rounded-lg bg-surface-2 text-subtle">{icon}</div>
         )}
       </div>
 
@@ -48,7 +44,7 @@ export function StatCard({
         {trend && (
           <span
             className={cn(
-              "text-xs font-mono font-medium px-1.5 py-0.5 rounded",
+              "text-xs font-mono font-medium px-1.5 py-0.5 rounded-md",
               trend.isPositive
                 ? "text-success bg-success/10 border border-success/20"
                 : "text-muted bg-surface-2 border border-border"
@@ -59,9 +55,7 @@ export function StatCard({
         )}
       </div>
 
-      {subtitle && (
-        <p className="mt-1 text-xs text-subtle leading-tight">{subtitle}</p>
-      )}
+      {subtitle && <p className="mt-2 text-xs text-subtle leading-snug">{subtitle}</p>}
     </div>
   );
 }
