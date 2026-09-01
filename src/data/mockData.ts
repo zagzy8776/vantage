@@ -34,4 +34,4 @@ export const MOCK_PROVIDERS: ProviderDescriptor[] = [
   { id: "resend", name: "Resend Email Platform", kind: "email", description: "Transactional outreach email dispatch and delivery analytics.", envKey: "RESEND_API_KEY" },
 ];
 
-export const SUPPORTED_COUNTRIES = [{ code: "US", name: "United States" }, { code: "CA", name: "Canada" }, { code: "AU", name: "Australia" }, { code: "GB", name: "United Kingdom" }, { code: "PL", name: "Poland" }, { code: "GH", name: "Ghana" }, { code: "FR", name: "France" }, { code: "DK", name: "Denmark" }, { code: "IT", name: "Italy" }, { code: "CH", name: "Switzerland" }, { code: "DE", name: "Germany" }];
+export const SUPPORTED_COUNTRIES = [{ code: "US", name: "United States" }, { code: "CA", name: "Canada" }, { code: "AU", name: "Australia" }, { code: "GB", name: "United Kingdom" }, { code: "PL", name: "Poland" }, { code: "GH", name: "Ghana" }, { code: "FR", name: "France" }, { code: "DK", name: "Denmark" }, { code: "IT", name: "Italy" }, { code: "CH", name: "Switzerland" }, { code: "DE", name: "Germany" }, { code: "NG", name: "Nigeria" }];
