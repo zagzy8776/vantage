@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
       }),
     );
     return NextResponse.json(
-      { error: "Unexpected discovery error. Please try again.", detail: error instanceof Error ? error.stack : String(error) },
+      { error: "Unexpected discovery error. Please try again." },
       { status: 500 },
     );
   }
