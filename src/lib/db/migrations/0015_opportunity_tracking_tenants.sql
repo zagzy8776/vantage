@@ -5,14 +5,10 @@ UPDATE tracked_entities t
 SET owner_id = source.owner_id,
     organization_id = source.organization_id
 FROM (
-  SELECT DISTINCT ON (srb.business_id)
-    srb.business_id,
-    sra.owner_id,
-    sra.organization_id
+  SELECT srb.business_id, sra.owner_id, sra.organization_id
   FROM search_run_businesses srb
   INNER JOIN search_run_access sra ON sra.search_run_id = srb.search_run_id
   WHERE sra.owner_id IS NOT NULL
-  ORDER BY srb.business_id, sra.created_at DESC NULLS LAST
 ) source
 WHERE t.business_id = source.business_id
   AND t.owner_id IS NULL;
