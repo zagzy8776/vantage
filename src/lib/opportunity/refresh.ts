@@ -10,12 +10,38 @@ function normalize(value: string | null | undefined) {
   return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function normalizePhone(value: string | null | undefined) {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+function phonesAgree(left: string | null | undefined, right: string | null | undefined) {
+  const a = normalizePhone(left);
+  const b = normalizePhone(right);
+  if (!a || !b) return true;
+  if (a === b) return true;
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  return shorter.length >= 8 && longer.endsWith(shorter);
+}
+
+function domain(value: string | null | undefined) {
+  if (!value) return "";
+  try { return new URL(value).hostname.replace(/^www\./i, "").toLowerCase(); } catch { return ""; }
+}
+
 function matchesBusiness(candidate: NormalizedBusiness, business: typeof businesses.$inferSelect) {
   const name = normalize(business.name);
   const candidateName = normalize(candidate.name);
   if (!name || !candidateName) return false;
+
   const exactName = name === candidateName || candidateName.includes(name) || name.includes(candidateName);
   if (!exactName) return false;
+
+  const knownBusinessDomain = domain(business.website);
+  const candidateDomain = domain(candidate.website);
+  if (knownBusinessDomain && candidateDomain && knownBusinessDomain !== candidateDomain) return false;
+  if (!phonesAgree(business.phone, candidate.phone)) return false;
+
   if (business.city && candidate.city) return normalize(business.city) === normalize(candidate.city);
   if (business.latitude != null && business.longitude != null && candidate.latitude != null && candidate.longitude != null) {
     return Math.abs(Number(business.latitude) - candidate.latitude) < 0.01 && Math.abs(Number(business.longitude) - candidate.longitude) < 0.01;
@@ -79,8 +105,6 @@ export async function refreshTrackedBusinesses(options: { limit?: number } = {})
         performanceScore: latestAnalysis[0]?.performanceScore ?? null,
         reviewCount: current?.reviewCount ?? row.business.reviewCount ?? null,
         starRating: current?.rating ?? (row.business.rating == null ? null : Number(row.business.rating)),
-        // The current providers do not expose a verified open/closed field.
-        // Null means unknown; the opportunity engine must never infer "open".
         openStatus: null,
         category: current?.category ?? row.business.category,
       }, {
