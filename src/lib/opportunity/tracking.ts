@@ -35,8 +35,11 @@ function changedCategory(oldValue: string | null, newValue: string | null) {
   if (!oldValue || !newValue) return false;
   const oldSet = new Set(oldValue.toLowerCase().split(/[,|]/).map((value) => value.trim()).filter(Boolean));
   const newSet = new Set(newValue.toLowerCase().split(/[,|]/).map((value) => value.trim()).filter(Boolean));
-  for (const value of newSet) if (!oldSet.has(value)) return true;
-  return false;
+  let changed = false;
+  newSet.forEach((value) => {
+    if (!oldSet.has(value)) changed = true;
+  });
+  return changed;
 }
 
 export interface DerivedOpportunity {
