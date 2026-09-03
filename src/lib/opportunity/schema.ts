@@ -4,13 +4,17 @@ import { businesses } from "@/lib/db/schema";
 export const trackedEntities = pgTable("tracked_entities", {
   id: text("id").primaryKey(),
   businessId: text("business_id").notNull().references(() => businesses.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull(),
+  organizationId: text("organization_id"),
   active: boolean("active").notNull().default(true),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   lastCheckedAt: timestamp("last_checked_at", { withTimezone: true, mode: "date" }),
 }, (table) => ({
-  businessUnique: uniqueIndex("tracked_entities_business_unique").on(table.businessId),
+  businessOwnerUnique: uniqueIndex("tracked_entities_business_owner_unique").on(table.businessId, table.ownerId),
   activeIndex: index("tracked_entities_active_idx").on(table.active),
   lastCheckedIndex: index("tracked_entities_last_checked_idx").on(table.lastCheckedAt),
+  ownerIndex: index("tracked_entities_owner_idx").on(table.ownerId),
+  organizationIndex: index("tracked_entities_organization_idx").on(table.organizationId),
 }));
 
 export const entitySnapshots = pgTable("entity_snapshots", {
