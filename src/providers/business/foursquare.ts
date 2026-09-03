@@ -8,21 +8,12 @@ type FoursquareSearchResponse = {
     fsq_place_id?: string;
     name?: string;
     categories?: Array<{ name?: string }>;
-    location?: {
-      address?: string;
-      country?: string;
-      region?: string;
-      locality?: string;
-      neighborhood?: Array<string>;
-      postcode?: string;
-      address_extended?: string;
-      formatted_address?: string;
-      cross_street?: string;
-    };
+    location?: { address?: string; country?: string; region?: string; locality?: string; neighborhood?: Array<string>; postcode?: string; address_extended?: string; formatted_address?: string; cross_street?: string };
     geocodes?: { main?: { latitude?: number; longitude?: number } };
-    contact?: { tel?: string; website?: string };
+    contact?: { tel?: string; website?: string; email?: string };
     tel?: string;
     website?: string;
+    email?: string;
     rating?: number;
     stats?: { total_ratings?: number };
     price?: number;
@@ -31,11 +22,15 @@ type FoursquareSearchResponse = {
 
 type FoursquareVenue = NonNullable<FoursquareSearchResponse["results"]>[number];
 
+const RETURN_FIELDS = ["fsq_id", "fsq_place_id", "name", "categories", "location", "geocodes", "tel", "contact", "website", "email", "rating", "stats", "price"].join(",");
+
 export function buildFoursquareSearchParams(query: DiscoveryQuery) {
   const params = new URLSearchParams();
   const geography = normalizeGeography(query);
   params.set("query", query.category);
   params.set("limit", String(Math.min(50, Math.max(1, query.limit))));
+  params.set("fields", RETURN_FIELDS);
+  params.set("tel_format", "E164");
 
   const ll = query.latitude !== undefined && query.longitude !== undefined ? `${query.latitude},${query.longitude}` : undefined;
   if (ll) params.set("ll", ll);
@@ -65,7 +60,6 @@ function matchesRequestedLocation(query: DiscoveryQuery, location?: FoursquareVe
   const locationRegion = normalized(normalizeRegion(location?.region));
   const locationCity = normalized(location?.locality);
   const locationArea = normalized(location?.neighborhood?.[0]);
-
   const country = normalized(countryNameForQuery(query.countryCode, query.countryName, query.country));
   const locationCountryName = normalizeCountry(location?.country)?.countryName;
   const normalizedLocationCountry = normalized(locationCountryName ?? location?.country);
@@ -85,7 +79,6 @@ function normalizeResult(result: FoursquareVenue, query: DiscoveryQuery): Normal
   const lng = result.geocodes?.main?.longitude;
   const location = result.location;
   const street = chooseStreet(location, query);
-
   if (!(result.fsq_place_id || result.fsq_id) || !result.name) return null;
   if (query.street && street === undefined) return null;
 
@@ -117,31 +110,22 @@ export class FoursquareBusinessProvider implements BusinessDiscoveryProvider {
   async search(query: DiscoveryQuery): Promise<ProviderSearchResult> {
     const apiKey = process.env.FOURSQUARE_API_KEY?.trim();
     if (!apiKey) return { provider: this.name, status: "unavailable", results: [], errorMessage: "FOURSQUARE_API_KEY is not configured." };
-
     try {
       const url = new URL("https://places-api.foursquare.com/places/search");
       const params = buildNearbyQuery(query);
       url.search = params.toString();
-
       const response = await fetch(url.toString(), {
         headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}`, "X-Places-Api-Version": "2025-06-17" },
         cache: "no-store",
         signal: AbortSignal.timeout(timeoutMs("BUSINESS_PROVIDER_TIMEOUT_MS", 20_000)),
       });
-
       if (response.status === 429) return { provider: this.name, status: "rate-limited", results: [], errorMessage: "Foursquare rate limit exceeded." };
       if (response.status === 401 || response.status === 403) return { provider: this.name, status: "failed", results: [], errorMessage: "Foursquare authentication failed." };
       if (response.status === 400) return { provider: this.name, status: "invalid-request", results: [], errorMessage: "Foursquare rejected the search request." };
       if (!response.ok) return { provider: this.name, status: "unexpected-response", results: [], errorMessage: `Foursquare request failed with status ${response.status}` };
-
       const data = (await response.json()) as FoursquareSearchResponse;
       if (!data || !Array.isArray(data.results)) return { provider: this.name, status: "unexpected-response", results: [], errorMessage: "Malformed Foursquare response." };
-
-      const results = data.results
-        .filter((result) => matchesRequestedLocation(query, result.location))
-        .map((result) => normalizeResult(result, query))
-        .filter((business): business is NormalizedBusiness => Boolean(business));
-
+      const results = data.results.filter((result) => matchesRequestedLocation(query, result.location)).map((result) => normalizeResult(result, query)).filter((business): business is NormalizedBusiness => Boolean(business));
       return { provider: this.name, status: results.length ? "success" : "zero-results", results };
     } catch (error) {
       const timedOut = error instanceof DOMException && error.name === "TimeoutError";
