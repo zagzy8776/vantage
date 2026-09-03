@@ -17,7 +17,10 @@ function matchesBusiness(candidate: NormalizedBusiness, business: typeof busines
   const exactName = name === candidateName || candidateName.includes(name) || name.includes(candidateName);
   if (!exactName) return false;
   if (business.city && candidate.city) return normalize(business.city) === normalize(candidate.city);
-  return true;
+  if (business.latitude != null && business.longitude != null && candidate.latitude != null && candidate.longitude != null) {
+    return Math.abs(Number(business.latitude) - candidate.latitude) < 0.01 && Math.abs(Number(business.longitude) - candidate.longitude) < 0.01;
+  }
+  return !business.city && !candidate.city;
 }
 
 async function refreshFromProvider(business: typeof businesses.$inferSelect) {
@@ -76,8 +79,13 @@ export async function refreshTrackedBusinesses(options: { limit?: number } = {})
         performanceScore: latestAnalysis[0]?.performanceScore ?? null,
         reviewCount: current?.reviewCount ?? row.business.reviewCount ?? null,
         starRating: current?.rating ?? (row.business.rating == null ? null : Number(row.business.rating)),
-        openStatus: true,
+        // The current providers do not expose a verified open/closed field.
+        // Null means unknown; the opportunity engine must never infer "open".
+        openStatus: null,
         category: current?.category ?? row.business.category,
+      }, {
+        userId: row.tracked.ownerId,
+        organizationId: row.tracked.organizationId,
       });
       checked += 1;
       changed += result.opportunities.length;
