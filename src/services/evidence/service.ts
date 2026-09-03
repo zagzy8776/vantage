@@ -9,6 +9,31 @@ import { firecrawlWebsiteResearchProvider } from "@/providers/website-research/f
 import { verificationStatusFromEvidence } from "./confidence";
 import type { EvidenceItem, WebsiteResearchResult } from "./types";
 
+function bestPublicPhone(items: EvidenceItem[]) {
+  const candidates = items
+    .filter((item) => item.category === "contact" && item.statement.startsWith("Public telephone number found:") && item.value)
+    .map((item) => String(item.value).trim())
+    .filter((value) => {
+      const digits = value.replace(/\D/g, "");
+      return digits.length >= 7 && digits.length <= 15;
+    });
+
+  return candidates.sort((a, b) => {
+    const aInternational = a.trim().startsWith("+") ? 1 : 0;
+    const bInternational = b.trim().startsWith("+") ? 1 : 0;
+    return bInternational - aInternational || b.replace(/\D/g, "").length - a.replace(/\D/g, "").length;
+  })[0] ?? null;
+}
+
+async function persistRecoveredPhone(businessId: string, items: EvidenceItem[]) {
+  const phone = bestPublicPhone(items);
+  if (!phone) return;
+  await getDb()
+    .update(businesses)
+    .set({ phone, updatedAt: new Date() })
+    .where(eq(businesses.id, businessId));
+}
+
 export async function storeEvidence(items: EvidenceItem[], options?: { runId?: string }) {
   if (!items.length) return;
   await assertDeepDiscoverySchemaReady();
@@ -53,6 +78,7 @@ export async function enrichBusinessWebsite(
     timeoutMs: limits?.timeoutMs,
   });
   await storeEvidence(result.evidence, { runId: limits?.runId });
+  await persistRecoveredPhone(businessId, result.evidence);
   await assertDeepDiscoverySchemaReady();
   await getDb()
     .update(businesses)
@@ -69,6 +95,7 @@ export async function enrichBusinessWebsiteWithFirecrawl(
 ): Promise<WebsiteResearchResult> {
   const result = await firecrawlWebsiteResearchProvider.research({ businessId, url: websiteUrl, maxPages });
   await storeEvidence(result.evidence, { runId });
+  await persistRecoveredPhone(businessId, result.evidence);
   await assertDeepDiscoverySchemaReady();
   const verificationStatus = verificationStatusFromEvidence(result.evidence);
   await getDb()
