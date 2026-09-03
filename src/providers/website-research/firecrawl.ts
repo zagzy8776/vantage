@@ -10,6 +10,16 @@ interface FirecrawlResponse {
   error?: string;
 }
 
+function extractMatches(value: string, pattern: RegExp) {
+  const matches: RegExpExecArray[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value)) !== null) {
+    matches.push(match);
+    if (!pattern.global) break;
+  }
+  return matches;
+}
+
 function extractPublicPhones(value: string) {
   const phones = new Set<string>();
   const add = (raw: string) => {
@@ -20,21 +30,18 @@ function extractPublicPhones(value: string) {
       .replace(/\s+/g, " ")
       .trim();
     const cleaned = decoded.replace(/[?#].*$/, "").trim();
-    if (!cleaned) return;
     const digits = cleaned.replace(/\D/g, "");
-    if (digits.length >= 7 && digits.length <= 15) phones.add(cleaned);
+    if (cleaned && digits.length >= 7 && digits.length <= 15) phones.add(cleaned);
   };
 
-  for (const match of value.matchAll(/(?:href\s*=\s*["']tel:|tel:)([^"'\s<>]+)/gi)) add(match[1]);
-  for (const match of value.matchAll(/(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=)(\+?\d{7,15})/gi)) add(match[1]);
-  for (const match of value.matchAll(/(?:telephone|phone|tel)\s*["']?\s*[:=]\s*["']([^"'}<]{7,40})["']/gi)) add(match[1]);
-  for (const match of value.matchAll(/(?:\+\d{1,3}[\s().-]?)?(?:\d[\s().-]?){7,14}\d/g)) add(match[0]);
+  for (const match of extractMatches(value, /(?:href\s*=\s*["']tel:|tel:)([^"'\s<>]+)/gi)) add(match[1]);
+  for (const match of extractMatches(value, /(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=)(\+?\d{7,15})/gi)) add(match[1]);
+  for (const match of extractMatches(value, /(?:telephone|phone|tel)\s*["']?\s*[:=]\s*["']([^"'}<]{7,40})["']/gi)) add(match[1]);
+  for (const match of extractMatches(value, /(?:\+\d{1,3}[\s().-]?)?(?:\d[\s().-]?){7,14}\d/g)) add(match[0]);
 
   return Array.from(phones).filter((phone) => {
     const digits = phone.replace(/\D/g, "");
-    if (digits.length < 7 || digits.length > 15) return false;
-    if (/^\d{4}[\s-]?\d{1,2}[\s-]?\d{1,2}$/.test(phone)) return false;
-    return true;
+    return digits.length >= 7 && digits.length <= 15;
   }).slice(0, 5);
 }
 
@@ -90,12 +97,7 @@ export class FirecrawlWebsiteResearchProvider implements WebsiteResearchProvider
         response = await fetch("https://api.firecrawl.dev/v2/scrape", {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url,
-            formats: ["markdown", "html"],
-            onlyMainContent: true,
-            timeout: Number(process.env.FIRECRAWL_TIMEOUT_MS) || 60_000,
-          }),
+          body: JSON.stringify({ url, formats: ["markdown", "html"], onlyMainContent: true, timeout: Number(process.env.FIRECRAWL_TIMEOUT_MS) || 60_000 }),
           cache: "no-store",
           signal: AbortSignal.timeout(Number(process.env.FIRECRAWL_TIMEOUT_MS) || 60_000),
         });
