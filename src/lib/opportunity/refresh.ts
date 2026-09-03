@@ -29,7 +29,7 @@ function domain(value: string | null | undefined) {
   try { return new URL(value).hostname.replace(/^www\./i, "").toLowerCase(); } catch { return ""; }
 }
 
-function matchesBusiness(candidate: NormalizedBusiness, business: typeof businesses.$inferSelect) {
+export function matchesTrackedBusiness(candidate: NormalizedBusiness, business: typeof businesses.$inferSelect) {
   const name = normalize(business.name);
   const candidateName = normalize(candidate.name);
   if (!name || !candidateName) return false;
@@ -68,7 +68,7 @@ async function refreshFromProvider(business: typeof businesses.$inferSelect) {
   for (const providerName of ["foursquare", "yelp"] as const) {
     try {
       const result = await providerRegistry[providerName].search(base);
-      const match = result.results.find((candidate) => matchesBusiness(candidate, business));
+      const match = result.results.find((candidate) => matchesTrackedBusiness(candidate, business));
       if (match) return match;
     } catch {
       // A failed provider should not prevent the other provider or local snapshot.
