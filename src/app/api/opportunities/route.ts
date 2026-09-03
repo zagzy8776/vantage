@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql, type SQLWrapper } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/auth/middleware";
 import { getDb } from "@/lib/db";
@@ -14,7 +14,7 @@ function tenantVisibility(auth: { userId: string; organizationId?: string | null
     : sql`sra.owner_id = ${auth.userId}`;
 }
 
-function visibleBusinessExists(auth: { userId: string; organizationId?: string | null }, businessId: string) {
+function visibleBusinessExists(auth: { userId: string; organizationId?: string | null }, businessId: SQLWrapper | string) {
   return sql`EXISTS (
     SELECT 1
     FROM search_run_businesses srb
