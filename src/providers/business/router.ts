@@ -4,6 +4,7 @@ import { providerRegistry } from "./registry";
 import type { DiscoveryMode, DiscoveryQuery, DiscoverySource, NormalizedBusiness, ProviderSearchResult } from "./types";
 import type { DiscoverySourceSelection } from "@/lib/types";
 import { timeoutMs, withTimeout } from "@/lib/reliability/timeout";
+import { searchEvidence } from "@/providers/evidence-search/router";
 
 export interface ProviderSummary {
   status: ProviderSearchResult["status"] | "not-queried";
@@ -47,7 +48,7 @@ function confidenceForMatch(a: NormalizedBusiness, b: NormalizedBusiness) {
     : false;
   const sameName = left.name && left.name === right.name;
   const sameCity = left.city && left.city === right.city;
-  const sameCountry = left.country && left.country === right.country;
+  const sameCountry = left.country && right.country && left.country === right.country;
   const sameAddress = left.address && right.address && left.address === right.address;
 
   if (samePhone || sameWebsite) return { level: "high" as const, score: 3 };
@@ -147,6 +148,83 @@ function mergeResults(results: ProviderSearchResult[]) {
   return deduplicateBusinesses(results.flatMap((result) => result.results));
 }
 
+function extractPhoneCandidates(value: string) {
+  const phones = new Set<string>();
+  const add = (raw: string) => {
+    const cleaned = raw.replace(/&nbsp;/gi, " ").replace(/&#43;/gi, "+").trim();
+    const digits = cleaned.replace(/\D/g, "");
+    if (digits.length >= 7 && digits.length <= 15) phones.add(cleaned);
+  };
+  const patterns = [
+    /(?:tel:|phone(?:\s*number)?|telephone|mobile|call)\s*[:=]?\s*([+\d][\d\s().-]{6,18}\d)/gi,
+    /(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=)(\+?\d{7,15})/gi,
+    /(?:\+\d{1,3}[\s().-]?)?(?:\d[\s().-]?){7,14}\d/g,
+  ];
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(value)) !== null) {
+      add(match[1] ?? match[0]);
+      if (!pattern.global) break;
+    }
+  }
+  return Array.from(phones).slice(0, 5);
+}
+
+function bestPhoneFromSearchResults(items: Array<{ title: string; url: string; snippet?: string }>) {
+  const candidates = items.flatMap((item) => extractPhoneCandidates(`${item.title}\n${item.snippet ?? ""}\n${item.url}`));
+  return candidates.sort((a, b) => {
+    const aInternational = a.startsWith("+") ? 1 : 0;
+    const bInternational = b.startsWith("+") ? 1 : 0;
+    return bInternational - aInternational || b.replace(/\D/g, "").length - a.replace(/\D/g, "").length;
+  })[0] ?? undefined;
+}
+
+async function recoverMissingPhones(clusters: DiscoveryCluster[], query: DiscoveryQuery) {
+  const hasWebSearch = Boolean(process.env.TAVILY_API_KEY?.trim() || process.env.EXA_API_KEY?.trim());
+  if (!hasWebSearch) return clusters;
+
+  const maxQueries = Math.max(
+    1,
+    Number(process.env.MAX_PHONE_RECOVERY_QUERIES) || (query.depth === "deep" ? 40 : query.depth === "standard" ? 20 : 5),
+  );
+  let queries = 0;
+  const recovered: DiscoveryCluster[] = [];
+
+  for (const cluster of clusters) {
+    if (queries >= maxQueries || cluster.canonical.phone) {
+      recovered.push(cluster);
+      continue;
+    }
+
+    const business = cluster.canonical;
+    const location = [business.city ?? query.city, business.region ?? query.region, business.country ?? query.country].filter(Boolean).join(", ");
+    const searchQuery = `"${business.name}" ${location} phone contact telephone WhatsApp`.trim();
+    try {
+      const result = await searchEvidence({
+        businessName: business.name,
+        category: business.category ?? query.category,
+        country: business.country ?? query.country,
+        location,
+        limit: 8,
+        query: searchQuery,
+      }, "best-available");
+      queries += 1;
+      const phone = bestPhoneFromSearchResults(result.results.flatMap((item) => item.results));
+      if (phone) cluster.canonical = { ...business, phone };
+    } catch {
+      queries += 1;
+    }
+    recovered.push(cluster);
+  }
+
+  return recovered;
+}
+
+async function finalizeClusters(clusters: DiscoveryCluster[], query: DiscoveryQuery) {
+  const ranked = rankClusters(clusters, query.limit);
+  return recoverMissingPhones(ranked, query);
+}
+
 export async function runBusinessDiscovery(query: DiscoveryQuery, options: RouterOptions): Promise<DiscoveryRunResult> {
   const primaryProvider = options.primary ?? "foursquare";
   const fallbackProvider: DiscoverySource = primaryProvider === "foursquare" ? "yelp" : "foursquare";
@@ -163,7 +241,7 @@ export async function runBusinessDiscovery(query: DiscoveryQuery, options: Route
     providers.foursquare = buildProviderSummary(foursquare);
     providers.yelp = buildProviderSummary(yelp);
     const combined = mergeResults([foursquare, yelp]);
-    const ranked = rankClusters(combined.clusters, query.limit);
+    const ranked = await finalizeClusters(combined.clusters, query);
     return {
       clusters: ranked,
       results: ranked.map((cluster) => cluster.canonical),
@@ -184,7 +262,7 @@ export async function runBusinessDiscovery(query: DiscoveryQuery, options: Route
     const fallback = await queryProvider(fallbackProvider, query);
     providers[fallbackProvider] = buildProviderSummary(fallback);
     const combined = mergeResults([primary, fallback]);
-    const ranked = rankClusters(combined.clusters, query.limit);
+    const ranked = await finalizeClusters(combined.clusters, query);
     return {
       clusters: ranked,
       results: ranked.map((cluster) => cluster.canonical),
@@ -199,7 +277,7 @@ export async function runBusinessDiscovery(query: DiscoveryQuery, options: Route
   }
 
   const combined = mergeResults([primary]);
-  const ranked = rankClusters(combined.clusters, query.limit);
+  const ranked = await finalizeClusters(combined.clusters, query);
   return {
     clusters: ranked,
     results: ranked.map((cluster) => cluster.canonical),
