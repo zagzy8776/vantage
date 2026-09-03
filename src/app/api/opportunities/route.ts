@@ -24,6 +24,10 @@ function visibleBusinessExists(auth: { userId: string; organizationId?: string |
   )`;
 }
 
+function owner(auth: { userId: string; organizationId?: string | null }) {
+  return { userId: auth.userId, organizationId: auth.organizationId ?? null };
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
@@ -47,7 +51,7 @@ export async function GET(request: NextRequest) {
       .from(opportunityEvents)
       .innerJoin(trackedEntities, eq(opportunityEvents.trackedEntityId, trackedEntities.id))
       .innerJoin(businesses, eq(trackedEntities.businessId, businesses.id))
-      .where(sql`${trackedEntities.active} = true AND ${visibleBusinessExists(auth, businesses.id)}`)
+      .where(sql`${trackedEntities.active} = true AND ${trackedEntities.ownerId} = ${auth.userId}${auth.organizationId ? sql` AND ${trackedEntities.organizationId} = ${auth.organizationId}` : sql``} AND ${visibleBusinessExists(auth, businesses.id)}`)
       .orderBy(desc(opportunityEvents.createdAt))
       .limit(limit);
 
@@ -78,7 +82,7 @@ export async function POST(request: NextRequest) {
       .limit(1);
     if (!business[0]) return NextResponse.json({ error: "Business not found." }, { status: 404 });
 
-    const tracked = active ? await trackBusiness(businessId) : await untrackBusiness(businessId);
+    const tracked = active ? await trackBusiness(businessId, owner(auth)) : await untrackBusiness(businessId, owner(auth));
     return NextResponse.json({ tracked }, { status: 200 });
   } catch (error) {
     console.error(JSON.stringify({ diagnostic: "opportunity_tracking_failed", error: error instanceof Error ? error.message : String(error) }));
