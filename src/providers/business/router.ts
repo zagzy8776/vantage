@@ -22,9 +22,9 @@ function mergeResults(results: ProviderSearchResult[]) { return deduplicateBusin
 
 function normalizeMatchText(value: string) { return value.toLowerCase().replace(/&amp;/g, "&").replace(/[^a-z0-9]+/g, " ").trim(); }
 function businessNameTokens(name: string) { return normalizeMatchText(name).split(/\s+/).filter((token) => token.length >= 3 && !["the", "and", "for", "ltd", "limited", "llc", "inc", "company", "co"].includes(token)); }
-function searchResultRelevance(item: { title: string; url: string; snippet?: string }, business: NormalizedBusiness, location: string) {
+function searchResultRelevance(item: { title: string; url: string; snippet?: string }, business: NormalizedBusiness, location: string, extraText = "") {
   const title = normalizeMatchText(item.title);
-  const body = normalizeMatchText(`${item.snippet ?? ""} ${item.url}`);
+  const body = normalizeMatchText(`${item.snippet ?? ""} ${item.url} ${extraText}`);
   const tokens = businessNameTokens(business.name);
   if (!tokens.length) return 0;
   const matchedTokens = tokens.filter((token) => title.includes(token) || body.includes(token));
@@ -46,17 +46,65 @@ function extractPhoneCandidates(value: string) {
     /(?:^|[^\d])(?:0\d[\s().-]?){6,12}\d(?:$|[^\d])/gm,
   ];
   for (const pattern of patterns) { let match: RegExpExecArray | null; while ((match = pattern.exec(value)) !== null) { add(match[1] ?? match[0]); if (!pattern.global) break; } }
-  return Array.from(phones).filter((phone) => phone.replace(/\D/g, "").length <= 15).slice(0, 8);
+  return Array.from(phones).filter((phone) => phone.replace(/\D/g, "").length <= 15).slice(0, 12);
 }
 
-function bestPhoneFromSearchResults(items: Array<{ title: string; url: string; snippet?: string }>, business: NormalizedBusiness, location: string) {
-  const ranked = items
-    .map((item) => ({ item, relevance: searchResultRelevance(item, business, location), phones: extractPhoneCandidates(`${item.title}\n${item.snippet ?? ""}\n${item.url}`) }))
-    .filter((entry) => entry.relevance >= 5 && entry.phones.length > 0)
-    .sort((a, b) => b.relevance - a.relevance);
-  if (!ranked.length) return undefined;
-  const candidates = ranked.flatMap(({ phones, relevance }) => phones.map((phone) => ({ phone, relevance })));
-  return candidates.sort((a, b) => { const aInternational = a.phone.startsWith("+") ? 1 : 0; const bInternational = b.phone.startsWith("+") ? 1 : 0; return b.relevance - a.relevance || bInternational - aInternational || b.phone.replace(/\D/g, "").length - a.phone.replace(/\D/g, "").length; })[0]?.phone;
+function isSafePublicUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host === "::1") return false;
+    if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host)) return false;
+    const private172 = host.match(/^172\.(\d+)\./);
+    if (private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31) return false;
+    return true;
+  } catch { return false; }
+}
+
+function decodeHtml(value: string) { return value.replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&nbsp;/gi, " ").replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code))).replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16))); }
+function stripPublicHtml(value: string) { return decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ")); }
+
+async function fetchPublicSearchPage(url: string) {
+  if (!isSafePublicUrl(url)) return undefined;
+  try {
+    const response = await fetch(url, { headers: { Accept: "text/html,application/xhtml+xml" }, cache: "no-store", redirect: "follow", signal: AbortSignal.timeout(8_000) });
+    if (!response.ok) return undefined;
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) return undefined;
+    const html = (await response.text()).slice(0, 600_000);
+    return { html, text: stripPublicHtml(html) };
+  } catch { return undefined; }
+}
+
+function phonesFromPublicPage(html: string) {
+  const candidates = new Set<string>();
+  for (const match of html.matchAll(/href=["']tel:([^"']+)["']/gi)) candidates.add(decodeHtml(match[1]).replace(/[?#].*$/, "").trim());
+  for (const match of html.matchAll(/(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=)(\+?\d{7,15})/gi)) candidates.add(match[1]);
+  for (const match of html.matchAll(/(?:itemprop=["']telephone["'][^>]*>\s*([^<]+)|["']telephone["']\s*[:=]\s*["']([^"']+)["'])/gi)) candidates.add((match[1] ?? match[2]).trim());
+  const visible = stripPublicHtml(html);
+  for (const phone of extractPhoneCandidates(visible)) candidates.add(phone);
+  return Array.from(candidates).filter((phone) => phone.replace(/\D/g, "").length >= 7 && phone.replace(/\D/g, "").length <= 15).slice(0, 15);
+}
+
+async function bestPhoneFromSearchResults(items: Array<{ title: string; url: string; snippet?: string }>, business: NormalizedBusiness, location: string) {
+  const ranked = items.map((item) => ({ item, relevance: searchResultRelevance(item, business, location), phones: extractPhoneCandidates(`${item.title}\n${item.snippet ?? ""}\n${item.url}`) })).filter((entry) => entry.relevance >= 5).sort((a, b) => b.relevance - a.relevance);
+  const candidates: Array<{ phone: string; relevance: number; pageEvidence: boolean }> = [];
+  for (const entry of ranked.slice(0, 5)) {
+    for (const phone of entry.phones) candidates.push({ phone, relevance: entry.relevance, pageEvidence: false });
+    const page = await fetchPublicSearchPage(entry.item.url);
+    if (!page) continue;
+    const pageRelevance = searchResultRelevance(entry.item, business, location, page.text.slice(0, 40_000));
+    if (pageRelevance < 5) continue;
+    for (const phone of phonesFromPublicPage(page.html)) candidates.push({ phone, relevance: pageRelevance + 3, pageEvidence: true });
+  }
+  if (!candidates.length) return undefined;
+  const counts = new Map<string, number>();
+  for (const candidate of candidates) counts.set(candidate.phone.replace(/\D/g, ""), (counts.get(candidate.phone.replace(/\D/g, "")) ?? 0) + 1);
+  return candidates.sort((a, b) => {
+    const aKey = a.phone.replace(/\D/g, ""); const bKey = b.phone.replace(/\D/g, "");
+    return (b.relevance + (counts.get(bKey) ?? 0) * 2 + (b.pageEvidence ? 2 : 0)) - (a.relevance + (counts.get(aKey) ?? 0) * 2 + (a.pageEvidence ? 2 : 0)) || (b.phone.startsWith("+") ? 1 : 0) - (a.phone.startsWith("+") ? 1 : 0) || bKey.length - aKey.length;
+  })[0]?.phone;
 }
 
 async function recoverMissingPhones(clusters: DiscoveryCluster[], query: DiscoveryQuery) {
@@ -72,7 +120,7 @@ async function recoverMissingPhones(clusters: DiscoveryCluster[], query: Discove
     try {
       const result = await searchEvidence({ businessName: business.name, category: business.category ?? query.category, country: business.country ?? query.country, location, limit: 10, query: `"${business.name}" ${location} phone telephone contact WhatsApp` }, "both");
       queries += 1;
-      const phone = bestPhoneFromSearchResults(result.results.flatMap((item) => item.results), business, location);
+      const phone = await bestPhoneFromSearchResults(result.results.flatMap((item) => item.results), business, location);
       if (phone) cluster.canonical = { ...business, phone };
     } catch { queries += 1; }
     recovered.push(cluster);
