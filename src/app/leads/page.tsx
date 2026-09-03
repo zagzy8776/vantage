@@ -22,6 +22,7 @@ interface LiveLead {
   street: string | null;
   website: string | null;
   phone: string | null;
+  email: string | null;
   opportunityScore: number;
   status: PipelineStage;
   websiteStatus: "none" | "unknown" | "unreachable" | "poor" | "fair" | "good";
@@ -81,15 +82,17 @@ export default function LeadsPage() {
       ) : (
         <>
           <div className="hidden lg:block overflow-x-auto border border-border rounded-lg bg-surface/50">
-            <table className="w-full min-w-[1000px] text-sm font-mono">
+            <table className="w-full min-w-[1240px] text-sm font-mono">
               <thead className="bg-surface-2/50 border-b border-border"><tr>
-                <th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Business</th><th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Category</th><th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Location</th><th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Website</th><th className="text-center px-3 py-2 text-xs font-medium text-subtle uppercase">Opportunity</th><th className="text-center px-3 py-2 text-xs font-medium text-subtle uppercase">Health</th><th className="text-center px-3 py-2 text-xs font-medium text-subtle uppercase">Status</th><th className="text-right px-3 py-2 text-xs font-medium text-subtle uppercase">Updated</th>
+                <th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Business</th><th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Category</th><th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Location</th><th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Phone</th><th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Email</th><th className="text-left px-3 py-2 text-xs font-medium text-subtle uppercase">Website</th><th className="text-center px-3 py-2 text-xs font-medium text-subtle uppercase">Opportunity</th><th className="text-center px-3 py-2 text-xs font-medium text-subtle uppercase">Health</th><th className="text-center px-3 py-2 text-xs font-medium text-subtle uppercase">Status</th><th className="text-right px-3 py-2 text-xs font-medium text-subtle uppercase">Updated</th>
               </tr></thead>
               <tbody className="divide-y divide-border">
                 {filtered.map((lead) => <tr key={lead.id} className="hover:bg-surface-2/30">
                   <td className="px-3 py-3"><Link href={`/leads/${lead.id}`} className="flex items-center gap-2.5 font-medium hover:text-accent"><span className="w-8 h-8 rounded bg-surface-2 border border-border text-accent flex items-center justify-center text-xs font-bold">{initials(lead.name)}</span>{lead.name}</Link></td>
                   <td className="px-3 py-3 text-subtle">{lead.category ?? "—"}</td>
                   <td className="px-3 py-3 text-subtle">{[lead.city, lead.country].filter(Boolean).join(", ") || "—"}</td>
+                  <td className="px-3 py-3">{lead.phone ? <a href={`tel:${lead.phone}`} className="text-accent hover:underline whitespace-nowrap">{lead.phone}</a> : <span className="text-subtle">Not found</span>}</td>
+                  <td className="px-3 py-3">{lead.email ? <a href={`mailto:${lead.email}`} className="text-accent hover:underline max-w-[230px] truncate block">{lead.email}</a> : <span className="text-subtle">Not found</span>}</td>
                   <td className="px-3 py-3">{lead.website ? <a href={lead.website} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{formatDomain(lead.website)}</a> : <span className="text-subtle">No website</span>}</td>
                   <td className="px-3 py-3 text-center"><OpportunityScore score={lead.opportunityScore} size="sm" /></td>
                   <td className="px-3 py-3 text-center"><StatusBadge type="health" value={lead.websiteStatus} /></td>
@@ -104,6 +107,10 @@ export default function LeadsPage() {
             {filtered.map((lead) => <Link key={lead.id} href={`/leads/${lead.id}`} className="block border border-border rounded-lg bg-surface p-3 hover:border-accent/40">
               <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="w-8 h-8 rounded bg-surface-2 border border-border text-accent flex items-center justify-center text-xs font-bold">{initials(lead.name)}</span><span className="font-semibold text-sm">{lead.name}</span></div><OpportunityScore score={lead.opportunityScore} size="sm" /></div>
               <div className="mt-2 text-xs text-subtle">{lead.category ?? "—"} · {[lead.city, lead.country].filter(Boolean).join(", ") || "—"}</div>
+              <div className="mt-2 grid gap-1 text-xs">
+                <span className={lead.phone ? "text-accent truncate" : "text-subtle"}>{lead.phone ?? "Phone not found"}</span>
+                <span className={lead.email ? "text-accent truncate" : "text-subtle"}>{lead.email ?? "Email not found"}</span>
+              </div>
               <div className="mt-2 flex flex-wrap gap-2"><StatusBadge type="health" value={lead.websiteStatus} /><StatusBadge type="stage" value={lead.status} />{lead.website ? <span className="text-accent text-xs truncate max-w-[220px]">{formatDomain(lead.website)}</span> : <span className="text-xs text-subtle">No website</span>}</div>
             </Link>)}
           </div>
