@@ -11,6 +11,11 @@ export const OPPORTUNITY_TYPES = {
 
 export type OpportunityType = (typeof OPPORTUNITY_TYPES)[keyof typeof OPPORTUNITY_TYPES];
 
+export interface OpportunityOwner {
+  userId: string;
+  organizationId?: string | null;
+}
+
 export interface OpportunitySnapshotInput {
   performanceScore?: number | null;
   reviewCount?: number | null;
@@ -39,10 +44,6 @@ export interface DerivedOpportunity {
   evidenceSentence: string;
 }
 
-/**
- * Deliberately deterministic rules. The first version must prove that the
- * signal itself is valuable before an ML model is allowed to invent a score.
- */
 export function deriveOpportunities(oldSnapshot: OpportunitySnapshotInput & { observedAt: Date }, nextSnapshot: OpportunitySnapshotInput & { observedAt: Date }): DerivedOpportunity[] {
   const elapsedDays = daysBetween(oldSnapshot.observedAt, nextSnapshot.observedAt);
   const opportunities: DerivedOpportunity[] = [];
@@ -85,28 +86,45 @@ export function deriveOpportunities(oldSnapshot: OpportunitySnapshotInput & { ob
   return opportunities;
 }
 
-export async function trackBusiness(businessId: string) {
+function ownerFilter(owner: OpportunityOwner) {
+  return owner.organizationId
+    ? and(eq(trackedEntities.ownerId, owner.userId), eq(trackedEntities.organizationId, owner.organizationId))
+    : eq(trackedEntities.ownerId, owner.userId);
+}
+
+export async function trackBusiness(businessId: string, owner: OpportunityOwner) {
   const db = getDb();
-  const existing = await db.select().from(trackedEntities).where(eq(trackedEntities.businessId, businessId)).limit(1);
+  const existing = await db.select().from(trackedEntities)
+    .where(and(eq(trackedEntities.businessId, businessId), ownerFilter(owner)))
+    .limit(1);
   if (existing[0]) {
     if (!existing[0].active) {
-      return (await db.update(trackedEntities).set({ active: true }).where(eq(trackedEntities.id, existing[0].id)).returning())[0]!;
+      return (await db.update(trackedEntities).set({ active: true }).where(and(eq(trackedEntities.id, existing[0].id), ownerFilter(owner))).returning())[0]!;
     }
     return existing[0];
   }
   const business = await db.select({ id: businesses.id }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
   if (!business[0]) throw new Error("Business not found.");
-  return (await db.insert(trackedEntities).values({ id: crypto.randomUUID(), businessId, active: true }).returning())[0]!;
+  return (await db.insert(trackedEntities).values({
+    id: crypto.randomUUID(),
+    businessId,
+    ownerId: owner.userId,
+    organizationId: owner.organizationId ?? null,
+    active: true,
+  }).returning())[0]!;
 }
 
-export async function untrackBusiness(businessId: string) {
+export async function untrackBusiness(businessId: string, owner: OpportunityOwner) {
   const db = getDb();
-  return (await db.update(trackedEntities).set({ active: false }).where(eq(trackedEntities.businessId, businessId)).returning())[0] ?? null;
+  return (await db.update(trackedEntities)
+    .set({ active: false })
+    .where(and(eq(trackedEntities.businessId, businessId), ownerFilter(owner)))
+    .returning())[0] ?? null;
 }
 
-export async function recordBusinessSnapshot(businessId: string, input: OpportunitySnapshotInput) {
+export async function recordBusinessSnapshot(businessId: string, input: OpportunitySnapshotInput, owner: OpportunityOwner) {
   const db = getDb();
-  const tracked = await trackBusiness(businessId);
+  const tracked = await trackBusiness(businessId, owner);
   const observedAt = input.observedAt ?? new Date();
   const previous = await db.select().from(entitySnapshots)
     .where(eq(entitySnapshots.trackedEntityId, tracked.id))
@@ -124,7 +142,7 @@ export async function recordBusinessSnapshot(businessId: string, input: Opportun
     category: input.category ?? null,
   }).returning())[0]!;
 
-  await db.update(trackedEntities).set({ lastCheckedAt: observedAt }).where(eq(trackedEntities.id, tracked.id));
+  await db.update(trackedEntities).set({ lastCheckedAt: observedAt }).where(and(eq(trackedEntities.id, tracked.id), ownerFilter(owner)));
 
   if (!previous[0]) return { snapshot: inserted, opportunities: [] };
 
