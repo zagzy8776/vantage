@@ -1,10 +1,32 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { businesses, leads } from "@/lib/db/schema";
+import { businesses, evidenceItems, leads } from "@/lib/db/schema";
 import { requireAuth } from "@/auth/middleware";
 
 export const dynamic = "force-dynamic";
+
+const publicPhoneEvidence = sql<string | null>`(
+  SELECT ei.value
+  FROM ${evidenceItems} ei
+  WHERE ei.business_id = ${businesses.id}
+    AND ei.category = 'contact'
+    AND ei.statement LIKE 'Public telephone number found:%'
+    AND ei.value IS NOT NULL
+  ORDER BY ei.observed_at DESC
+  LIMIT 1
+)`;
+
+const publicEmailEvidence = sql<string | null>`(
+  SELECT ei.value
+  FROM ${evidenceItems} ei
+  WHERE ei.business_id = ${businesses.id}
+    AND ei.category = 'contact'
+    AND ei.statement LIKE 'Public email address found:%'
+    AND ei.value IS NOT NULL
+  ORDER BY ei.observed_at DESC
+  LIMIT 1
+)`;
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
@@ -29,7 +51,8 @@ export async function GET(request: NextRequest) {
         area: businesses.area,
         street: businesses.street,
         website: businesses.website,
-        phone: businesses.phone,
+        phone: sql<string | null>`COALESCE(${businesses.phone}, ${publicPhoneEvidence})`,
+        email: publicEmailEvidence,
         opportunityScore: leads.opportunityScore,
         status: leads.status,
         websiteStatus: leads.websiteStatus,
