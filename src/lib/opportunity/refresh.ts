@@ -19,9 +19,8 @@ function phonesAgree(left: string | null | undefined, right: string | null | und
   const b = normalizePhone(right);
   if (!a || !b) return true;
   if (a === b) return true;
-  const shorter = a.length <= b.length ? a : b;
-  const longer = a.length <= b.length ? b : a;
-  return shorter.length >= 8 && longer.endsWith(shorter);
+  const comparableLength = 10;
+  return a.length >= comparableLength && b.length >= comparableLength && a.slice(-comparableLength) === b.slice(-comparableLength);
 }
 
 function domain(value: string | null | undefined) {
