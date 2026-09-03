@@ -20,6 +20,22 @@ async function queryProvider(providerName: DiscoverySource, query: DiscoveryQuer
 function buildProviderSummary(result?: ProviderSearchResult): ProviderSummary { if (!result) return { status: "not-queried", count: 0, queried: false }; return { status: result.status, count: result.results.length, queried: true, errorMessage: result.errorMessage }; }
 function mergeResults(results: ProviderSearchResult[]) { return deduplicateBusinesses(results.flatMap((result) => result.results)); }
 
+function normalizeMatchText(value: string) { return value.toLowerCase().replace(/&amp;/g, "&").replace(/[^a-z0-9]+/g, " ").trim(); }
+function businessNameTokens(name: string) { return normalizeMatchText(name).split(/\s+/).filter((token) => token.length >= 3 && !["the", "and", "for", "ltd", "limited", "llc", "inc", "company", "co"].includes(token)); }
+function searchResultRelevance(item: { title: string; url: string; snippet?: string }, business: NormalizedBusiness, location: string) {
+  const title = normalizeMatchText(item.title);
+  const body = normalizeMatchText(`${item.snippet ?? ""} ${item.url}`);
+  const tokens = businessNameTokens(business.name);
+  if (!tokens.length) return 0;
+  const matchedTokens = tokens.filter((token) => title.includes(token) || body.includes(token));
+  const nameCoverage = matchedTokens.length / tokens.length;
+  let score = nameCoverage * 5;
+  if (title.includes(normalizeMatchText(business.name))) score += 5;
+  const normalizedLocation = normalizeMatchText(location);
+  if (normalizedLocation && normalizedLocation.split(/\s+/).filter((token) => token.length >= 3).some((token) => body.includes(token))) score += 1;
+  return score;
+}
+
 function extractPhoneCandidates(value: string) {
   const phones = new Set<string>();
   const add = (raw: string) => { const cleaned = raw.replace(/&nbsp;/gi, " ").replace(/&#43;/gi, "+").replace(/\s+/g, " ").trim(); const digits = cleaned.replace(/\D/g, ""); if (digits.length >= 7 && digits.length <= 15) phones.add(cleaned); };
@@ -33,9 +49,14 @@ function extractPhoneCandidates(value: string) {
   return Array.from(phones).filter((phone) => phone.replace(/\D/g, "").length <= 15).slice(0, 8);
 }
 
-function bestPhoneFromSearchResults(items: Array<{ title: string; url: string; snippet?: string }>) {
-  const candidates = items.flatMap((item) => extractPhoneCandidates(`${item.title}\n${item.snippet ?? ""}\n${item.url}`));
-  return candidates.sort((a, b) => { const aInternational = a.startsWith("+") ? 1 : 0; const bInternational = b.startsWith("+") ? 1 : 0; return bInternational - aInternational || b.replace(/\D/g, "").length - a.replace(/\D/g, "").length; })[0] ?? undefined;
+function bestPhoneFromSearchResults(items: Array<{ title: string; url: string; snippet?: string }>, business: NormalizedBusiness, location: string) {
+  const ranked = items
+    .map((item) => ({ item, relevance: searchResultRelevance(item, business, location), phones: extractPhoneCandidates(`${item.title}\n${item.snippet ?? ""}\n${item.url}`) }))
+    .filter((entry) => entry.relevance >= 5 && entry.phones.length > 0)
+    .sort((a, b) => b.relevance - a.relevance);
+  if (!ranked.length) return undefined;
+  const candidates = ranked.flatMap(({ phones, relevance }) => phones.map((phone) => ({ phone, relevance })));
+  return candidates.sort((a, b) => { const aInternational = a.phone.startsWith("+") ? 1 : 0; const bInternational = b.phone.startsWith("+") ? 1 : 0; return b.relevance - a.relevance || bInternational - aInternational || b.phone.replace(/\D/g, "").length - a.phone.replace(/\D/g, "").length; })[0]?.phone;
 }
 
 async function recoverMissingPhones(clusters: DiscoveryCluster[], query: DiscoveryQuery) {
@@ -51,7 +72,7 @@ async function recoverMissingPhones(clusters: DiscoveryCluster[], query: Discove
     try {
       const result = await searchEvidence({ businessName: business.name, category: business.category ?? query.category, country: business.country ?? query.country, location, limit: 10, query: `"${business.name}" ${location} phone telephone contact WhatsApp` }, "both");
       queries += 1;
-      const phone = bestPhoneFromSearchResults(result.results.flatMap((item) => item.results));
+      const phone = bestPhoneFromSearchResults(result.results.flatMap((item) => item.results), business, location);
       if (phone) cluster.canonical = { ...business, phone };
     } catch { queries += 1; }
     recovered.push(cluster);
@@ -61,8 +82,6 @@ async function recoverMissingPhones(clusters: DiscoveryCluster[], query: Discove
 }
 
 async function finalizeClusters(clusters: DiscoveryCluster[], query: DiscoveryQuery) {
-  // Recover contact data before ranking. Otherwise a phone-less business can be
-  // pushed out of the top N before the recovery pass ever gets a chance to run.
   const maxRecoveryCandidates = Math.min(clusters.length, Math.max(query.limit * 2, query.depth === "deep" ? 40 : query.depth === "standard" ? 20 : 5));
   const recovered = await recoverMissingPhones(clusters.slice(0, maxRecoveryCandidates), query);
   return rankClusters(recovered, query.limit);
