@@ -44,30 +44,29 @@ async function recoverMissingPhones(clusters: DiscoveryCluster[], query: Discove
   let queries = 0;
   const recovered: DiscoveryCluster[] = [];
   for (const cluster of clusters) {
-    if (queries >= maxQueries || cluster.canonical.phone) { recovered.push(cluster); continue; }
+    if (queries >= maxQueries) break;
+    if (cluster.canonical.phone) { recovered.push(cluster); continue; }
     const business = cluster.canonical;
     const location = [business.city ?? query.city, business.region ?? query.region, business.country ?? query.country].filter(Boolean).join(", ");
-    const queryVariants = [
-      `"${business.name}" ${location} phone telephone`,
-      `"${business.name}" ${location} contact WhatsApp`,
-    ];
-    let bestPhone: string | undefined;
-    for (const searchQuery of queryVariants) {
-      if (queries >= maxQueries || bestPhone) break;
-      try {
-        const result = await searchEvidence({ businessName: business.name, category: business.category ?? query.category, country: business.country ?? query.country, location, limit: 10, query: searchQuery }, "both");
-        queries += 1;
-        const phone = bestPhoneFromSearchResults(result.results.flatMap((item) => item.results));
-        if (phone) bestPhone = phone;
-      } catch { queries += 1; }
-    }
-    if (bestPhone) cluster.canonical = { ...business, phone: bestPhone };
+    try {
+      const result = await searchEvidence({ businessName: business.name, category: business.category ?? query.category, country: business.country ?? query.country, location, limit: 10, query: `"${business.name}" ${location} phone telephone contact WhatsApp` }, "both");
+      queries += 1;
+      const phone = bestPhoneFromSearchResults(result.results.flatMap((item) => item.results));
+      if (phone) cluster.canonical = { ...business, phone };
+    } catch { queries += 1; }
     recovered.push(cluster);
   }
+  for (const cluster of clusters.slice(recovered.length)) recovered.push(cluster);
   return recovered;
 }
 
-async function finalizeClusters(clusters: DiscoveryCluster[], query: DiscoveryQuery) { return recoverMissingPhones(rankClusters(clusters, query.limit), query); }
+async function finalizeClusters(clusters: DiscoveryCluster[], query: DiscoveryQuery) {
+  // Recover contact data before ranking. Otherwise a phone-less business can be
+  // pushed out of the top N before the recovery pass ever gets a chance to run.
+  const maxRecoveryCandidates = Math.min(clusters.length, Math.max(query.limit * 2, query.depth === "deep" ? 40 : query.depth === "standard" ? 20 : 5));
+  const recovered = await recoverMissingPhones(clusters.slice(0, maxRecoveryCandidates), query);
+  return rankClusters(recovered, query.limit);
+}
 
 export async function runBusinessDiscovery(query: DiscoveryQuery, options: RouterOptions): Promise<DiscoveryRunResult> {
   const primaryProvider = options.primary ?? "foursquare";
