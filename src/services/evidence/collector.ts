@@ -84,6 +84,20 @@ function getMeta(html: string, name: string) {
   return match ? normalizeEvidenceText(decodeHtml(match[1])) : "";
 }
 
+function extractPhonesFromHtml(html: string) {
+  const phones = new Set<string>();
+  for (const match of html.matchAll(/href=["']tel:([^"']+)["']/gi)) {
+    const value = decodeHtml(match[1]).replace(/[?#].*$/, "").trim();
+    if (value) phones.add(value);
+  }
+  const text = stripHtml(html);
+  for (const match of text.matchAll(/(?:\+?\d[\d\s().-]{6,}\d)/g)) {
+    const value = match[0].trim().replace(/\s+/g, " ");
+    if (value) phones.add(value);
+  }
+  return Array.from(phones).slice(0, 5);
+}
+
 export function extractInternalLinks(html: string, pageUrl: string): LinkCandidate[] {
   const base = new URL(pageUrl);
   const links: LinkCandidate[] = [];
@@ -157,7 +171,11 @@ function evidenceForSignals(
   if (description) add("about", `Public page description: ${description}`, description);
   if (/<form\b/i.test(html) || /contact|inquiry|message us/i.test(normalizedText))
     add("contact", "A public contact form or contact language is present on the page.");
-  if (/(?:\+?\d[\d\s().-]{6,}\d)/.test(text)) add("contact", "A public telephone number appears on the page.");
+
+  const phones = extractPhonesFromHtml(html);
+  for (const phone of phones) {
+    add("contact", `Public telephone number found: ${phone}`, phone, true, { phone });
+  }
 
   const emails = extractEmailsFromHtml(html);
   for (const email of emails.slice(0, 5)) {
