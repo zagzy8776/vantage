@@ -1,0 +1,52 @@
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+
+export const jobs = pgTable("jobs", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  providerJobId: text("provider_job_id").notNull(),
+  title: text("title").notNull(),
+  companyName: text("company_name").notNull(),
+  companyDomain: text("company_domain"),
+  description: text("description"),
+  location: text("location"),
+  countryCode: text("country_code"),
+  city: text("city"),
+  employmentType: text("employment_type"),
+  remote: boolean("remote"),
+  salaryMin: integer("salary_min"),
+  salaryMax: integer("salary_max"),
+  salaryCurrency: text("salary_currency"),
+  postedAt: timestamp("posted_at", { withTimezone: true, mode: "date" }),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "date" }),
+  applyUrl: text("apply_url"),
+  sourceUrl: text("source_url"),
+  sourceName: text("source_name"),
+  requirements: jsonb("requirements").$type<string[]>(),
+  verificationStatus: text("verification_status").notNull().default("unverified"),
+  verificationScore: integer("verification_score").notNull().default(0),
+  verificationReasons: jsonb("verification_reasons").$type<string[]>().notNull().default([]),
+  verificationEvidence: jsonb("verification_evidence").$type<Array<{ url: string; type: string; observedAt: string }>>().notNull().default([]),
+  directEmployer: boolean("direct_employer"),
+  stale: boolean("stale").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, (table) => ({
+  providerJobUnique: uniqueIndex("jobs_provider_job_unique").on(table.provider, table.providerJobId),
+  companyIndex: index("jobs_company_idx").on(table.companyName),
+  countryIndex: index("jobs_country_idx").on(table.countryCode),
+  statusIndex: index("jobs_verification_status_idx").on(table.verificationStatus),
+  postedIndex: index("jobs_posted_at_idx").on(table.postedAt),
+  staleIndex: index("jobs_stale_idx").on(table.stale),
+}));
+
+export const jobVerificationEvents = pgTable("job_verification_events", {
+  id: text("id").primaryKey(),
+  jobId: text("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  status: text("status").notNull(),
+  score: integer("score").notNull(),
+  evidence: jsonb("evidence").$type<Array<{ url: string; type: string; statement?: string }>>().notNull().default([]),
+  reasons: jsonb("reasons").$type<string[]>().notNull().default([]),
+  observedAt: timestamp("observed_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, (table) => ({
+  jobObservedIndex: index("job_verification_events_job_observed_idx").on(table.jobId, table.observedAt),
+}));
