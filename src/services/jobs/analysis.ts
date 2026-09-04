@@ -1,5 +1,6 @@
 import { generateWithFallback } from "@/providers/ai/router";
 import type { JobIntelligence, NormalizedJob } from "@/providers/jobs/types";
+import { researchJobs } from "./source-research";
 
 function cleanJson(content: string) {
   return content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
@@ -37,7 +38,7 @@ function parseJobIntelligence(content: string): JobIntelligence {
 }
 
 function promptFor(job: NormalizedJob) {
-  return `Analyze this job listing for a candidate. Use ONLY the supplied listing text and structured fields. Do not invent requirements, salary, employer facts, eligibility rules, or application steps. If something is not stated, put it in unknowns or leave the optional field empty.
+  return `Analyze this job listing for a candidate. Use ONLY the supplied listing text and structured fields. Public-source research may have expanded the listing, but treat it as evidence, not permission to guess. Do not invent requirements, salary, employer facts, eligibility rules, or application steps. If something is not stated, put it in unknowns or leave the optional field empty.
 
 Return JSON only with exactly these fields:
 summary (string), seniority (string|null), mustHave (string[]), niceToHave (string[]), skills (string[]), experience (string|null), education (string|null), responsibilities (string[]), locationRequirement (string|null), remotePolicy (string|null), applicationAdvice (string[]), unknowns (string[]), confidence (integer 0-100).
@@ -47,13 +48,15 @@ Employer: ${job.companyName}
 Location: ${job.location ?? "not stated"}
 Employment type: ${job.employmentType ?? "not stated"}
 Remote field: ${job.remote === undefined ? "not stated" : job.remote ? "remote" : "not remote"}
-Structured requirements already extracted: ${(job.requirements ?? []).join(" | ") || "none"}
+Employer website: ${job.companyWebsite ?? "not established"}
+Application URL: ${job.applyUrl ?? "not established"}
+Structured requirements: ${(job.requirements ?? []).join(" | ") || "none"}
 
-Listing text:
-${(job.description ?? "").slice(0, 18000)}`;
+Listing and researched public-source text:
+${(job.description ?? "").slice(0, 26000)}`;
 }
 
-const SYSTEM = "You are Vantage Job Intelligence. Your job is to turn real job-source text into a precise, evidence-grounded description of what the employer is asking for. Never fill gaps with general assumptions. Separate must-have requirements from preferences. Treat missing information as unknown.";
+const SYSTEM = "You are Vantage Job Intelligence. Your job is to turn real job-source and public employer-page evidence into a precise description of what the employer is asking for. Never fill gaps with general assumptions. Separate must-have requirements from preferences. Treat missing information as unknown. A third-party job provider is evidence of discovery, not evidence of employer ownership.";
 
 export async function analyzeJob(job: NormalizedJob): Promise<JobIntelligence | undefined> {
   const source = [job.description, ...(job.requirements ?? [])].filter(Boolean).join("\n").trim();
@@ -73,7 +76,7 @@ export async function analyzeJob(job: NormalizedJob): Promise<JobIntelligence | 
       repairRequest: (content) => ({
         messages: [
           { role: "system", content: SYSTEM },
-          { role: "user", content: `Repair the following response into valid JSON matching the requested schema. Keep only claims supported by the job listing.\n\n${content}` },
+          { role: "user", content: `Repair the following response into valid JSON matching the requested schema. Keep only claims supported by the supplied job/public-source evidence.\n\n${content}` },
         ],
         temperature: 0,
         maxTokens: 1800,
@@ -89,10 +92,12 @@ export async function analyzeJob(job: NormalizedJob): Promise<JobIntelligence | 
 }
 
 export async function analyzeJobs(jobs: NormalizedJob[], maxJobs = 12) {
-  const selected = jobs.filter((job) => (job.description?.trim().length ?? 0) >= 40 || (job.requirements?.length ?? 0) > 0).slice(0, maxJobs);
+  const researchLimit = Math.max(maxJobs, Math.min(Number(process.env.JOB_SOURCE_RESEARCH_LIMIT) || 20, jobs.length));
+  const researched = await researchJobs(jobs, researchLimit);
+  const selected = researched.filter((job) => (job.description?.trim().length ?? 0) >= 40 || (job.requirements?.length ?? 0) > 0).slice(0, maxJobs);
   const queue = [...selected];
   const results = new Map<string, JobIntelligence>();
-  const concurrency = 2;
+  const concurrency = Math.max(1, Math.min(Number(process.env.JOB_AI_ANALYSIS_CONCURRENCY) || 2, 4));
 
   async function worker() {
     while (queue.length) {
@@ -104,5 +109,5 @@ export async function analyzeJobs(jobs: NormalizedJob[], maxJobs = 12) {
   }
 
   await Promise.all(Array.from({ length: Math.min(concurrency, queue.length || 1) }, () => worker()));
-  return { jobs: jobs.map((job) => results.has(job.id) ? { ...job, intelligence: results.get(job.id) } : job), analyzed: results.size, attempted: selected.length };
+  return { jobs: researched.map((job) => results.has(job.id) ? { ...job, intelligence: results.get(job.id) } : job), analyzed: results.size, attempted: selected.length };
 }
