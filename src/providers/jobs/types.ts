@@ -12,6 +12,24 @@ export interface JobSearchQuery {
   postedWithinDays?: number;
 }
 
+export interface JobIntelligence {
+  summary: string;
+  seniority?: string;
+  mustHave: string[];
+  niceToHave: string[];
+  skills: string[];
+  experience?: string;
+  education?: string;
+  responsibilities: string[];
+  locationRequirement?: string;
+  remotePolicy?: string;
+  applicationAdvice: string[];
+  unknowns: string[];
+  confidence: number;
+  provider?: string;
+  model?: string;
+}
+
 export interface NormalizedJob {
   id: string;
   provider: JobProvider;
@@ -34,6 +52,7 @@ export interface NormalizedJob {
   sourceUrl?: string;
   sourceName?: string;
   requirements?: string[];
+  intelligence?: JobIntelligence;
   verificationStatus: JobVerificationStatus;
   verificationScore?: number;
   verificationReasons: string[];
