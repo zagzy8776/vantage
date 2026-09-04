@@ -63,6 +63,7 @@ export interface JobProviderResult {
   provider: JobProvider;
   status: "success" | "zero-results" | "unavailable" | "rate-limited" | "invalid-request" | "failed";
   jobs: NormalizedJob[];
+  totalCount?: number;
   errorMessage?: string;
 }
 
