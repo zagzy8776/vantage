@@ -1,35 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/auth/middleware";
 import { runJobDiscovery } from "@/providers/jobs/router";
-import { verifyEmployer } from "@/providers/jobs/verification";
 import { listPersistedJobs, persistJobs } from "@/providers/jobs/persistence";
-import type { JobProvider, NormalizedJob } from "@/providers/jobs/types";
+import type { JobProvider } from "@/providers/jobs/types";
 
 export const dynamic = "force-dynamic";
 
 const providerNames = new Set<JobProvider>(["adzuna", "jsearch", "jobspipe", "hirebase", "theirstack"]);
-const MAX_VERIFICATIONS_PER_SEARCH = 12;
-const VERIFICATION_CONCURRENCY = 3;
-
-async function verifyJobs(jobs: NormalizedJob[]) {
-  const verified = [...jobs];
-  for (let start = 0; start < verified.length; start += VERIFICATION_CONCURRENCY) {
-    const batch = verified.slice(start, start + VERIFICATION_CONCURRENCY);
-    const results = await Promise.all(batch.map(async (job) => {
-      const verification = await verifyEmployer(job);
-      return {
-        ...job,
-        companyDomain: verification.companyDomain ?? job.companyDomain,
-        verificationStatus: verification.status,
-        verificationScore: verification.score,
-        verificationReasons: verification.reasons,
-        verificationEvidence: verification.evidence,
-      } satisfies NormalizedJob;
-    }));
-    verified.splice(start, results.length, ...results);
-  }
-  return verified;
-}
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth(request);
@@ -53,22 +30,18 @@ export async function POST(request: NextRequest) {
     const postedWithinDays = Number.isFinite(postedWithinDaysRaw) ? Math.max(1, Math.min(Math.floor(postedWithinDaysRaw), 90)) : 30;
 
     const result = await runJobDiscovery({ title, country, countryCode, city, remote, limit, postedWithinDays }, providers);
-    const jobs = await verifyJobs(result.jobs.slice(0, MAX_VERIFICATIONS_PER_SEARCH));
-    const remaining = result.jobs.slice(MAX_VERIFICATIONS_PER_SEARCH);
-    const enrichedJobs = [...jobs, ...remaining];
-    const persistedCount = await persistJobs(enrichedJobs, auth);
-    const directEmployerVerifiedCount = enrichedJobs.filter((job) => job.verificationStatus === "direct_employer_verified").length;
-    const needsVerificationCount = enrichedJobs.filter((job) => job.verificationStatus === "needs_verification").length;
+    const persistedCount = await persistJobs(result.jobs, auth);
+    const directEmployerVerifiedCount = result.jobs.filter((job) => job.verificationStatus === "direct_employer_verified").length;
+    const needsVerificationCount = result.jobs.filter((job) => job.verificationStatus === "needs_verification").length;
 
     return NextResponse.json({
       ...result,
-      jobs: enrichedJobs,
       persistedCount,
       verification: {
-        checked: jobs.length,
+        checked: result.verification.attempted,
         directEmployerVerified: directEmployerVerifiedCount,
         needsVerification: needsVerificationCount,
-        remainingUnverified: enrichedJobs.length - directEmployerVerifiedCount - needsVerificationCount,
+        remainingUnverified: result.jobs.length - directEmployerVerifiedCount - needsVerificationCount,
       },
       policy: { directEmployerVerification: "public-source-evidence-required", fabricatedData: false },
     }, { status: 200, headers: { "Cache-Control": "no-store" } });
