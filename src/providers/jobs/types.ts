@@ -10,6 +10,8 @@ export interface JobSearchQuery {
   remote?: boolean;
   limit?: number;
   postedWithinDays?: number;
+  page?: number;
+  cursor?: string;
 }
 
 export interface JobIntelligence {
@@ -64,6 +66,8 @@ export interface JobProviderResult {
   status: "success" | "zero-results" | "unavailable" | "rate-limited" | "invalid-request" | "failed";
   jobs: NormalizedJob[];
   totalCount?: number;
+  nextCursor?: string;
+  hasMore?: boolean;
   errorMessage?: string;
 }
 
