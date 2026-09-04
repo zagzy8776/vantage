@@ -122,13 +122,12 @@ async function adzuna(query: JobSearchQuery): Promise<JobProviderResult> {
       const title = text(row.title); const companyName = text(row.company?.display_name);
       if (!title || !companyName || !text(row.id)) return [];
       const description = text(row.description);
-      const sourceUrl = cleanUrl(row.redirect_url);
       return [normalize({ id: `adzuna:${row.id}`, provider: "adzuna", title, companyName, description,
         location: text(row.location?.display_name), city: text(row.location?.area?.at(-1)),
         salaryMin: typeof row.salary_min === "number" ? row.salary_min : undefined,
         salaryMax: typeof row.salary_max === "number" ? row.salary_max : undefined,
         salaryCurrency: text(row.salary_currency), postedAt: text(row.created),
-        sourceUrl, sourceName: "Adzuna", requirements: requirementsFromText(description) })];
+        sourceUrl: undefined, sourceName: "Adzuna (discovery only)", requirements: requirementsFromText(description) })];
     }) };
   } catch (error) { return { provider: "adzuna", status: error instanceof Error && error.message === "RATE_LIMITED" ? "rate-limited" : "failed", jobs: [], errorMessage: error instanceof Error ? error.message : "Adzuna request failed." }; }
 }
