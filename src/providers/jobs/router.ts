@@ -1,4 +1,5 @@
 import type { JobDiscoveryProvider, JobProvider, JobProviderResult, JobSearchQuery, NormalizedJob } from "./types";
+import { verifyEmployer } from "./verification";
 
 function configured(name: JobProvider) {
   if (name === "adzuna") return Boolean(process.env.ADZUNA_APP_ID?.trim() && process.env.ADZUNA_APP_KEY?.trim());
@@ -72,8 +73,32 @@ const providers: Record<JobProvider, JobDiscoveryProvider> = { adzuna: { name: "
 
 function dedupe(jobs: NormalizedJob[]) { const seen = new Map<string, NormalizedJob>(); for (const job of jobs) { const key = `${job.companyName.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}|${job.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}|${(job.location ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}`; const existing = seen.get(key); if (!existing || (job.applyUrl && !existing.applyUrl) || (job.lastSeenAt && !existing.lastSeenAt)) seen.set(key, existing ? { ...existing, ...job, verificationReasons: Array.from(new Set([...existing.verificationReasons, ...job.verificationReasons])) } : job); } return Array.from(seen.values()); }
 
+async function verifyTopJobs(jobs: NormalizedJob[]) {
+  const candidates = jobs.filter((job) => job.verificationStatus !== "rejected").slice(0, 12);
+  const verified: NormalizedJob[] = [];
+  for (let index = 0; index < candidates.length; index += 3) {
+    const batch = candidates.slice(index, index + 3);
+    const results = await Promise.all(batch.map(async (job) => {
+      const verification = await verifyEmployer(job);
+      return {
+        ...job,
+        companyDomain: verification.companyDomain ?? job.companyDomain,
+        verificationStatus: verification.status,
+        verificationScore: verification.score,
+        verificationReasons: verification.reasons,
+        verificationEvidence: verification.evidence,
+      } satisfies NormalizedJob;
+    }));
+    verified.push(...results);
+  }
+  const rest = jobs.slice(candidates.length);
+  return [...verified, ...rest];
+}
+
 export async function runJobDiscovery(query: JobSearchQuery, selected?: JobProvider[]) {
   const names = selected?.length ? selected : (Object.keys(providers) as JobProvider[]);
   const results = await Promise.all(names.map((name) => providers[name].search(query)));
-  return { jobs: dedupe(results.flatMap((result) => result.jobs)).slice(0, Math.min(query.limit ?? 25, 100)), providers: results.map((result) => ({ provider: result.provider, status: result.status, count: result.jobs.length, errorMessage: result.errorMessage })), configuredProviders: names.filter(configured) };
+  const discovered = dedupe(results.flatMap((result) => result.jobs));
+  const jobs = (await verifyTopJobs(discovered)).slice(0, Math.min(query.limit ?? 25, 100));
+  return { jobs, providers: results.map((result) => ({ provider: result.provider, status: result.status, count: result.jobs.length, errorMessage: result.errorMessage })), configuredProviders: names.filter(configured), verification: { attempted: Math.min(discovered.length, 12), verified: jobs.filter((job) => job.verificationStatus === "direct_employer_verified").length } };
 }
