@@ -116,7 +116,7 @@ async function adzuna(query: JobSearchQuery): Promise<JobProviderResult> {
 async function jsearch(query: JobSearchQuery): Promise<JobProviderResult> {
   const key = process.env.OPENWEBNINJA_API_KEY?.trim(); if (!key) return { provider: "jsearch", status: "unavailable", jobs: [] };
   const url = new URL("https://api.openwebninja.com/jsearch/search-v2");
-  const locationQuery = query.city ? `${query.title} in ${query.city}` : `${query.title} in ${query.country ?? ""}`.trim();
+  const locationQuery = query.city ? `${query.title} in ${query.city}` : `${query.title} jobs in ${query.country ?? ""}`.trim();
   url.searchParams.set("query", locationQuery); url.searchParams.set("country", (query.countryCode ?? "us").toLowerCase()); url.searchParams.set("language", "en");
   if (query.remote) url.searchParams.set("work_from_home", "true");
   if (query.postedWithinDays) url.searchParams.set("date_posted", query.postedWithinDays <= 1 ? "today" : query.postedWithinDays <= 3 ? "3days" : query.postedWithinDays <= 7 ? "week" : "month");
@@ -135,7 +135,10 @@ async function jsearch(query: JobSearchQuery): Promise<JobProviderResult> {
 async function jobspipe(query: JobSearchQuery): Promise<JobProviderResult> {
   const key = process.env.JOBSPIPE_API_KEY?.trim(); if (!key) return { provider: "jobspipe", status: "unavailable", jobs: [] };
   const payload: Record<string, unknown> = { job_title_or: [query.title], limit: Math.min(Math.max(query.limit ?? 25, 25), 100) };
-  if (query.countryCode) payload.job_country_code_or = [query.countryCode.toUpperCase()]; if (query.remote !== undefined) payload.remote = query.remote; if (query.postedWithinDays) payload.posted_at_max_age_days = query.postedWithinDays;
+  if (query.countryCode) payload.job_country_code_or = [query.countryCode.toUpperCase()];
+  // The UI's unchecked Remote toggle means "all workplaces", not "non-remote".
+  if (query.remote === true) payload.remote = true;
+  if (query.postedWithinDays) payload.posted_at_max_age_days = query.postedWithinDays;
   try {
     const body = await requestJson("https://api.jobspipe.dev/v1/jobs/search", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const rows = Array.isArray(body?.data) ? body.data : [];
@@ -151,7 +154,7 @@ async function jobspipe(query: JobSearchQuery): Promise<JobProviderResult> {
 async function hirebase(query: JobSearchQuery): Promise<JobProviderResult> {
   const key = process.env.HIREBASE_API_KEY?.trim(); if (!key) return { provider: "hirebase", status: "unavailable", jobs: [] };
   const payload: Record<string, unknown> = { job_titles: [query.title], limit: Math.min(query.limit ?? 10, 50), page: 1, return_raw_description: "true" };
-  if (query.remote !== undefined) payload.location_types = [query.remote ? "Remote" : "On-site"];
+  if (query.remote === true) payload.location_types = ["Remote"];
   if (query.city || query.country) payload.geo_locations = [{ ...(query.city ? { city: query.city } : {}), ...(query.country ? { country: query.country } : {}) }];
   try {
     const body = await requestJson("https://api.hirebase.org/v2/jobs/search", { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": key }, body: JSON.stringify(payload) });
@@ -170,7 +173,8 @@ async function hirebase(query: JobSearchQuery): Promise<JobProviderResult> {
 async function theirStack(query: JobSearchQuery): Promise<JobProviderResult> {
   const key = process.env.THEIRSTACK_API_KEY?.trim(); if (!key) return { provider: "theirstack", status: "unavailable", jobs: [] };
   const payload: Record<string, unknown> = { job_title_or: [query.title], limit: Math.min(query.limit ?? 25, 100), page: 0, posted_at_max_age_days: query.postedWithinDays ?? 30 };
-  if (query.countryCode) payload.job_country_code_or = [query.countryCode.toUpperCase()]; if (query.remote !== undefined) payload.remote = query.remote;
+  if (query.countryCode) payload.job_country_code_or = [query.countryCode.toUpperCase()];
+  if (query.remote === true) payload.remote = true;
   try {
     const body = await requestJson("https://api.theirstack.com/v1/jobs/search", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const rows = Array.isArray(body?.data) ? body.data : [];
@@ -191,16 +195,7 @@ function dedupe(jobs: NormalizedJob[]) {
     const key = `${job.companyName.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}|${job.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}|${(job.location ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}`;
     const existing = seen.get(key);
     if (!existing) { seen.set(key, job); continue; }
-    const merged = { ...existing, ...job,
-      applyUrl: existing.applyUrl ?? job.applyUrl,
-      sourceUrl: existing.sourceUrl ?? job.sourceUrl,
-      companyDomain: existing.companyDomain ?? job.companyDomain,
-      companyWebsite: existing.companyWebsite ?? job.companyWebsite,
-      description: (job.description?.length ?? 0) > (existing.description?.length ?? 0) ? job.description : existing.description,
-      requirements: Array.from(new Set([...(existing.requirements ?? []), ...(job.requirements ?? [])])),
-      verificationReasons: Array.from(new Set([...existing.verificationReasons, ...job.verificationReasons])),
-      verificationEvidence: [...(existing.verificationEvidence ?? []), ...(job.verificationEvidence ?? [])].filter((item, index, all) => all.findIndex((candidate) => candidate.url === item.url && candidate.reason === item.reason) === index),
-    } satisfies NormalizedJob;
+    const merged = { ...existing, ...job, applyUrl: existing.applyUrl ?? job.applyUrl, sourceUrl: existing.sourceUrl ?? job.sourceUrl, companyDomain: existing.companyDomain ?? job.companyDomain, companyWebsite: existing.companyWebsite ?? job.companyWebsite, description: (job.description?.length ?? 0) > (existing.description?.length ?? 0) ? job.description : existing.description, requirements: Array.from(new Set([...(existing.requirements ?? []), ...(job.requirements ?? [])])), verificationReasons: Array.from(new Set([...existing.verificationReasons, ...job.verificationReasons])), verificationEvidence: [...(existing.verificationEvidence ?? []), ...(job.verificationEvidence ?? [])].filter((item, index, all) => all.findIndex((candidate) => candidate.url === item.url && candidate.reason === item.reason) === index) } satisfies NormalizedJob;
     seen.set(key, merged);
   }
   return Array.from(seen.values());
