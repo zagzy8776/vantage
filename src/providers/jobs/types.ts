@@ -34,7 +34,9 @@ export interface NormalizedJob {
   sourceName?: string;
   requirements?: string[];
   verificationStatus: JobVerificationStatus;
+  verificationScore: number;
   verificationReasons: string[];
+  verificationEvidence: Array<{ url: string; reason: string }>;
 }
 
 export interface JobProviderResult {
