@@ -2,12 +2,13 @@ import type { AIRequest } from "@/services/intelligence/types";
 import { aiProviderRegistry } from "./registry";
 import { AIProviderError, type AIProviderId, type AIRouterOptions, type AIRouterResult } from "./types";
 
-const DEFAULT_ORDER: AIProviderId[] = ["groq", "cerebras", "minimax", "pollinations", "openrouter"];
+const DEFAULT_ORDER: AIProviderId[] = ["groq", "cerebras", "together", "minimax", "pollinations", "openrouter"];
 
 function configured(provider: AIProviderId) {
   const envKey: Record<AIProviderId, string> = {
     groq: "GROQ_API_KEY",
     cerebras: "CEREBRAS_API_KEY",
+    together: "TOGETHER_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
     minimax: "MINIMAX_API_KEY",
     pollinations: "POLLINATIONS_API_KEY",
@@ -59,7 +60,7 @@ export async function generateWithFallback(request: AIRequest, options?: AIRoute
       const providerError = error instanceof AIProviderError ? error : new AIProviderError("Provider request failed.");
       failures.push(`${providerId}: ${providerError.message}`);
       failureDetails.push({ provider: providerId, status: providerError.status, message: providerError.message.slice(0, 240) });
-      if (!providerError.retryable) continue;
+      continue;
     }
   }
 
