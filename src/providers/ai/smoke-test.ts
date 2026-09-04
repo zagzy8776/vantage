@@ -14,6 +14,15 @@ interface AIProviderSmokeTestResult {
   model: string | null;
 }
 
+const envKeyMap: Record<AIProviderId, string> = {
+  groq: "GROQ_API_KEY",
+  cerebras: "CEREBRAS_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  together: "TOGETHER_API_KEY",
+  minimax: "MINIMAX_API_KEY",
+  pollinations: "POLLINATIONS_API_KEY",
+};
+
 export async function runAIProviderSmokeTest(request?: AIRequest): Promise<AIProviderSmokeTestResult[]> {
   const results: AIProviderSmokeTestResult[] = [];
   const testRequest: AIRequest = request ?? {
@@ -36,11 +45,6 @@ export async function runAIProviderSmokeTest(request?: AIRequest): Promise<AIPro
       model: null,
     };
 
-    const envKeyMap: Record<AIProviderId, string> = {
-      groq: "GROQ_API_KEY",
-      cerebras: "CEREBRAS_API_KEY",
-      openrouter: "OPENROUTER_API_KEY",
-    };
     result.configured = Boolean(process.env[envKeyMap[providerId]]?.trim());
 
     if (!result.configured) {
