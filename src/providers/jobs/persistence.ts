@@ -55,16 +55,21 @@ export async function persistJobs(jobs: NormalizedJob[], auth: Pick<AuthContext,
   return persisted;
 }
 
-export async function listPersistedJobs(auth: Pick<AuthContext, "userId" | "organizationId">, limit = 50) {
-  const db = getDb(); const safeLimit = Math.max(1, Math.min(Math.floor(limit), 200));
-  const result = await db.execute(sql`
-    SELECT id, provider, title, company_name AS "companyName", company_domain AS "companyDomain", company_website AS "companyWebsite",
-      description, location, country_code AS "countryCode", city, employment_type AS "employmentType", remote,
-      salary_min AS "salaryMin", salary_max AS "salaryMax", salary_currency AS "salaryCurrency", posted_at AS "postedAt", last_seen_at AS "lastSeenAt",
-      apply_url AS "applyUrl", source_url AS "sourceUrl", source_name AS "sourceName", requirements, job_intelligence AS "intelligence", verification_status AS "verificationStatus",
-      verification_score AS "verificationScore", verification_reasons AS "verificationReasons", stale
-    FROM jobs WHERE owner_id = ${auth.userId} AND (${auth.organizationId ?? null} IS NULL OR organization_id = ${auth.organizationId ?? null})
-    ORDER BY COALESCE(posted_at, last_seen_at) DESC NULLS LAST LIMIT ${safeLimit}
-  `);
-  return result.rows;
+export async function listPersistedJobs(auth: Pick<AuthContext, "userId" | "organizationId">, limit = 50, offset = 0) {
+  const db = getDb(); const safeLimit = Math.max(1, Math.min(Math.floor(limit), 200)); const safeOffset = Math.max(0, Math.floor(offset));
+  const where = sql`owner_id = ${auth.userId} AND (${auth.organizationId ?? null} IS NULL OR organization_id = ${auth.organizationId ?? null})`;
+  const [result, countResult] = await Promise.all([
+    db.execute(sql`
+      SELECT id, provider, title, company_name AS "companyName", company_domain AS "companyDomain", company_website AS "companyWebsite",
+        description, location, country_code AS "countryCode", city, employment_type AS "employmentType", remote,
+        salary_min AS "salaryMin", salary_max AS "salaryMax", salary_currency AS "salaryCurrency", posted_at AS "postedAt", last_seen_at AS "lastSeenAt",
+        apply_url AS "applyUrl", source_url AS "sourceUrl", source_name AS "sourceName", requirements, job_intelligence AS "intelligence", verification_status AS "verificationStatus",
+        verification_score AS "verificationScore", verification_reasons AS "verificationReasons", stale
+      FROM jobs WHERE ${where}
+      ORDER BY COALESCE(posted_at, last_seen_at) DESC NULLS LAST LIMIT ${safeLimit} OFFSET ${safeOffset}
+    `),
+    db.execute(sql`SELECT COUNT(*)::int AS count FROM jobs WHERE ${where}`),
+  ]);
+  const total = Number((countResult.rows[0] as { count?: number | string } | undefined)?.count ?? 0);
+  return { jobs: result.rows, total, hasMore: safeOffset + result.rows.length < total };
 }
