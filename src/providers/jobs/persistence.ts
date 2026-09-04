@@ -24,7 +24,9 @@ export async function persistJobs(jobs: NormalizedJob[], auth: Pick<AuthContext,
     const now = new Date();
     const postedAt = dateOrNull(job.postedAt);
     const lastSeenAt = dateOrNull(job.lastSeenAt) ?? now;
+    const score = job.verificationScore ?? 0;
     const reasons = JSON.stringify(job.verificationReasons ?? []);
+    const evidence = JSON.stringify(job.verificationEvidence ?? []);
     const requirements = JSON.stringify(job.requirements ?? []);
 
     await db.execute(sql`
@@ -40,7 +42,7 @@ export async function persistJobs(jobs: NormalizedJob[], auth: Pick<AuthContext,
         ${job.description ?? null}, ${job.location ?? null}, ${job.countryCode ?? null}, ${job.city ?? null},
         ${job.employmentType ?? null}, ${job.remote ?? null}, ${job.salaryMin ?? null}, ${job.salaryMax ?? null},
         ${job.salaryCurrency ?? null}, ${postedAt}, ${lastSeenAt}, ${job.applyUrl ?? null}, ${job.sourceUrl ?? null},
-        ${job.sourceName ?? null}, ${requirements}::jsonb, ${job.verificationStatus}, 0, ${reasons}::jsonb,
+        ${job.sourceName ?? null}, ${requirements}::jsonb, ${job.verificationStatus}, ${score}, ${reasons}::jsonb,
         ${auth.userId}, ${auth.organizationId ?? null}, false, ${now}, ${now}
       )
       ON CONFLICT (provider, provider_job_id, owner_id) DO UPDATE SET
@@ -63,6 +65,7 @@ export async function persistJobs(jobs: NormalizedJob[], auth: Pick<AuthContext,
         source_name = COALESCE(EXCLUDED.source_name, jobs.source_name),
         requirements = EXCLUDED.requirements,
         verification_status = EXCLUDED.verification_status,
+        verification_score = EXCLUDED.verification_score,
         verification_reasons = EXCLUDED.verification_reasons,
         stale = false,
         updated_at = EXCLUDED.updated_at
@@ -71,8 +74,8 @@ export async function persistJobs(jobs: NormalizedJob[], auth: Pick<AuthContext,
     await db.execute(sql`
       INSERT INTO job_verification_events (id, job_id, owner_id, status, score, evidence, reasons, observed_at)
       VALUES (
-        ${crypto.randomUUID()}, ${job.id}, ${auth.userId}, ${job.verificationStatus}, 0,
-        '[]'::jsonb, ${reasons}::jsonb, ${now}
+        ${crypto.randomUUID()}, ${job.id}, ${auth.userId}, ${job.verificationStatus}, ${score},
+        ${evidence}::jsonb, ${reasons}::jsonb, ${now}
       )
     `);
 
