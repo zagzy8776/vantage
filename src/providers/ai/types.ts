@@ -1,6 +1,6 @@
 import type { AIRequest, AIResult } from "@/services/intelligence/types";
 
-export type AIProviderId = "groq" | "cerebras" | "openrouter";
+export type AIProviderId = "groq" | "cerebras" | "openrouter" | "minimax" | "pollinations";
 
 export interface AIProvider {
   name: AIProviderId;
