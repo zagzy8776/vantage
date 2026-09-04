@@ -33,36 +33,76 @@ async function fetchPage(url: string) {
   } catch { return undefined; }
 }
 
+/**
+ * Provider listing pages are discovery evidence, not employer evidence.
+ * Never fetch Adzuna/JSearch/JobsPipe/Hirebase/TheirStack pages here.
+ * Only a supplied employer website is eligible for public-page verification.
+ */
 export async function verifyEmployer(job: NormalizedJob): Promise<JobVerification> {
-  const candidates = [job.applyUrl, job.sourceUrl].filter((value): value is string => Boolean(value));
-  const evidence: Array<{ url: string; reason: string }> = [];
+  const employerUrl = job.companyWebsite;
+  const employerHost = hostname(employerUrl);
+  if (!employerUrl || !employerHost) {
+    return {
+      status: "unverified",
+      score: 0,
+      reasons: ["The job was discovered, but Vantage does not have a verified public employer website to inspect."],
+      evidence: [],
+    };
+  }
+
+  const page = await fetchPage(employerUrl);
+  if (!page) {
+    return {
+      status: "needs_verification",
+      score: 0,
+      reasons: ["The employer website was identified, but its public page could not be reached for verification."],
+      evidence: [{ url: employerUrl, reason: "Employer website supplied by the job source." }],
+      companyDomain: employerHost,
+    };
+  }
+
+  const pageText = page.toLowerCase();
+  const evidence: Array<{ url: string; reason: string }> = [{ url: employerUrl, reason: "Public employer website supplied by the job source." }];
   const reasons: string[] = [];
-  let companyDomain: string | undefined;
-  let score = 0;
+  let score = 35;
 
-  for (const url of Array.from(new Set(candidates))) {
-    const page = await fetchPage(url);
-    if (!page) continue;
-    const host = hostname(url);
-    if (!host) continue;
-    const text = page.toLowerCase();
-    const companyMatch = matchesCompany(job, url);
-    const titleMatch = text.includes(job.title.toLowerCase());
-    const careersSignal = /\b(careers|career|jobs|job openings|join our team|work with us|vacancies)\b/i.test(text);
-    const agencySignal = /\b(staffing agency|recruitment agency|recruiter|on behalf of|headhunt|outsourcing)\b/i.test(text);
-    const atsHost = /greenhouse\.io|lever\.co|ashbyhq\.com|smartrecruiters\.com|recruitee\.com|bamboohr\.com|personio\./i.test(host);
+  const companyMatch = matchesCompany(job, employerUrl);
+  const companyNameLower = job.companyName.toLowerCase();
+  const companyNamePresent = pageText.includes(companyNameLower);
+  const careersSignal = /\b(careers|career|jobs|job openings|join our team|work with us|vacancies)\b/i.test(pageText);
+  const agencySignal = /\b(staffing agency|recruitment agency|recruiter|on behalf of|headhunt|outsourcing)\b/i.test(pageText);
 
-    if (companyMatch) { score += 35; evidence.push({ url, reason: "Public source domain matches the named employer." }); companyDomain = host; }
-    if (titleMatch) { score += 20; evidence.push({ url, reason: "Public source contains the discovered job title." }); }
-    if (careersSignal) { score += 20; evidence.push({ url, reason: "Public source contains an employer careers/jobs context." }); }
-    if (agencySignal) { score -= 45; reasons.push("Recruitment or staffing language was found on the source page."); }
-    if (atsHost) reasons.push("The posting uses an ATS domain; ATS ownership alone is not treated as employer verification.");
+  if (companyMatch || companyNamePresent) {
+    score += 25;
+    evidence.push({ url: employerUrl, reason: "Public employer website corroborates the named company." });
+  } else {
+    reasons.push("The employer website could not independently corroborate the named company.");
+  }
+  if (careersSignal) {
+    score += 20;
+    evidence.push({ url: employerUrl, reason: "Public employer website contains a careers/jobs context." });
+  }
+  if (agencySignal) {
+    score -= 45;
+    reasons.push("Recruitment or staffing language was found on the employer-domain page.");
   }
 
   score = Math.max(0, Math.min(100, score));
-  if (score >= 70 && evidence.some((item) => item.reason === "Public source domain matches the named employer.") && !reasons.some((reason) => reason.startsWith("Recruitment"))) {
-    return { status: "direct_employer_verified", score, reasons: ["Employer identity and job context were corroborated from a public source.", ...reasons], evidence, companyDomain };
+  if (score >= 70 && (companyMatch || companyNamePresent) && !agencySignal) {
+    return {
+      status: "direct_employer_verified",
+      score,
+      reasons: ["Employer identity was corroborated from the public employer website.", ...reasons],
+      evidence,
+      companyDomain: employerHost,
+    };
   }
-  if (evidence.length || reasons.length) return { status: "needs_verification", score, reasons: reasons.length ? reasons : ["Public source evidence exists, but it is insufficient for direct-employer verification."], evidence, companyDomain };
-  return { status: "unverified", score: 0, reasons: ["No accessible public source provided enough evidence to verify employer ownership."], evidence };
+
+  return {
+    status: "needs_verification",
+    score,
+    reasons: reasons.length ? reasons : ["Employer evidence exists, but it is insufficient for direct-employer verification."],
+    evidence,
+    companyDomain: employerHost,
+  };
 }
