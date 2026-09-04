@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/auth/middleware";
 import { runJobDiscovery } from "@/providers/jobs/router";
+import { listPersistedJobs, persistJobs } from "@/providers/jobs/persistence";
 import type { JobProvider } from "@/providers/jobs/types";
 
 export const dynamic = "force-dynamic";
@@ -29,9 +30,29 @@ export async function POST(request: NextRequest) {
     const postedWithinDays = Number.isFinite(postedWithinDaysRaw) ? Math.max(1, Math.min(Math.floor(postedWithinDaysRaw), 90)) : 30;
 
     const result = await runJobDiscovery({ title, country, countryCode, city, remote, limit, postedWithinDays }, providers);
-    return NextResponse.json({ ...result, policy: { directEmployerVerification: "not_yet_verified", fabricatedData: false } }, { status: 200, headers: { "Cache-Control": "no-store" } });
+    const persistedCount = await persistJobs(result.jobs, auth);
+
+    return NextResponse.json({
+      ...result,
+      persistedCount,
+      policy: { directEmployerVerification: "not_yet_verified", fabricatedData: false },
+    }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error(JSON.stringify({ diagnostic: "jobs_search_failed", message: error instanceof Error ? error.message : String(error) }));
     return NextResponse.json({ error: "Job discovery is temporarily unavailable." }, { status: 503 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) return auth;
+
+  try {
+    const limitRaw = Number(new URL(request.url).searchParams.get("limit") ?? 50);
+    const jobs = await listPersistedJobs(auth, Number.isFinite(limitRaw) ? limitRaw : 50);
+    return NextResponse.json({ jobs }, { status: 200, headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
+  } catch (error) {
+    console.error(JSON.stringify({ diagnostic: "jobs_list_failed", message: error instanceof Error ? error.message : String(error) }));
+    return NextResponse.json({ error: "Saved job intelligence is temporarily unavailable." }, { status: 503 });
   }
 }
