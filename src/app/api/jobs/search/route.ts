@@ -43,6 +43,10 @@ export async function POST(request: NextRequest) {
     const directEmployerVerifiedCount = result.jobs.filter((job) => job.verificationStatus === "direct_employer_verified").length;
     const needsVerificationCount = result.jobs.filter((job) => job.verificationStatus === "needs_verification").length;
     const providerFailures = result.providers.filter((provider) => provider.status === "failed" || provider.status === "rate-limited").length;
+    const rawProviderHits = result.providers.reduce((sum, provider) => sum + provider.count, 0);
+    const uniqueDiscovered = result.jobs.length;
+    const applicationPaths = result.jobs.filter((job) => Boolean(job.applyUrl)).length;
+    const employerSources = result.jobs.filter((job) => Boolean(job.companyWebsite)).length;
 
     return NextResponse.json({
       ...result,
@@ -50,7 +54,16 @@ export async function POST(request: NextRequest) {
       persistence: { persisted: !persistenceFailed && persistedCount === result.jobs.length, failed: persistenceFailed },
       verification: { checked: result.verification.attempted, directEmployerVerified: directEmployerVerifiedCount, needsVerification: needsVerificationCount, remainingUnverified: result.jobs.length - directEmployerVerifiedCount - needsVerificationCount },
       intelligence: { attempted: intelligence.attempted, analyzed: intelligence.analyzed },
-      diagnostics: { providersFailed: providerFailures, providersConfigured: result.configuredProviders.length, jobsDiscovered: result.jobs.length },
+      diagnostics: {
+        providersFailed: providerFailures,
+        providersConfigured: result.configuredProviders.length,
+        rawProviderHits,
+        uniqueDiscovered,
+        returned: result.jobs.length,
+        applicationPaths,
+        employerSources,
+        providers: result.providers.map((provider) => ({ provider: provider.provider, status: provider.status, count: provider.count, errorMessage: provider.errorMessage ?? null })),
+      },
       policy: { directEmployerVerification: "public-source-evidence-required", fabricatedData: false, jobRequirements: "source-grounded-ai-analysis" },
     }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
