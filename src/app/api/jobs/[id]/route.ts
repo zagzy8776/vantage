@@ -11,6 +11,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   try {
     const db = getDb();
+    const orgCondition = auth.organizationId
+      ? sql`AND organization_id = ${auth.organizationId}`
+      : sql``;
+
     const rows = await db.execute(sql`
       SELECT id, provider, title, company_name AS "companyName", company_domain AS "companyDomain",
         description, location, country_code AS "countryCode", city, employment_type AS "employmentType",
@@ -22,9 +26,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       FROM jobs
       WHERE id = ${params.id}
         AND owner_id = ${auth.userId}
-        AND (${auth.organizationId ?? null} IS NULL OR organization_id = ${auth.organizationId ?? null})
+        ${orgCondition}
       LIMIT 1
-    `;
+    `);
+
     if (!rows.length) return NextResponse.json({ error: "Job not found." }, { status: 404 });
     return NextResponse.json({ job: rows[0] }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
   } catch (error) {
