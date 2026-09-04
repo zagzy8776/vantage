@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/auth/middleware";
 import { runJobDiscovery } from "@/providers/jobs/router";
 import { listPersistedJobs, persistJobs } from "@/providers/jobs/persistence";
+import { analyzeJobs } from "@/services/jobs/analysis";
 import type { JobProvider } from "@/providers/jobs/types";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,10 @@ export async function POST(request: NextRequest) {
     const postedWithinDaysRaw = Number(body?.postedWithinDays ?? 30);
     const postedWithinDays = Number.isFinite(postedWithinDaysRaw) ? Math.max(1, Math.min(Math.floor(postedWithinDaysRaw), 90)) : 30;
 
-    const result = await runJobDiscovery({ title, country, countryCode, city, remote, limit, postedWithinDays }, providers);
+    const discovery = await runJobDiscovery({ title, country, countryCode, city, remote, limit, postedWithinDays }, providers);
+    const intelligence = await analyzeJobs(discovery.jobs, Math.min(12, limit));
+    const result = { ...discovery, jobs: intelligence.jobs };
+
     let persistedCount = 0;
     let persistenceFailed = false;
     try {
@@ -45,8 +49,9 @@ export async function POST(request: NextRequest) {
       persistedCount,
       persistence: { persisted: !persistenceFailed && persistedCount === result.jobs.length, failed: persistenceFailed },
       verification: { checked: result.verification.attempted, directEmployerVerified: directEmployerVerifiedCount, needsVerification: needsVerificationCount, remainingUnverified: result.jobs.length - directEmployerVerifiedCount - needsVerificationCount },
+      intelligence: { attempted: intelligence.attempted, analyzed: intelligence.analyzed },
       diagnostics: { providersFailed: providerFailures, providersConfigured: result.configuredProviders.length, jobsDiscovered: result.jobs.length },
-      policy: { directEmployerVerification: "public-source-evidence-required", fabricatedData: false },
+      policy: { directEmployerVerification: "public-source-evidence-required", fabricatedData: false, jobRequirements: "source-grounded-ai-analysis" },
     }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error(JSON.stringify({ diagnostic: "jobs_search_failed", message: error instanceof Error ? error.message : String(error) }));
