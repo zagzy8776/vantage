@@ -18,6 +18,7 @@ export interface NormalizedJob {
   title: string;
   companyName: string;
   companyDomain?: string;
+  companyWebsite?: string;
   description?: string;
   location?: string;
   countryCode?: string;
