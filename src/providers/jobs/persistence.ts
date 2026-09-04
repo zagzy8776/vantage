@@ -91,7 +91,7 @@ export async function listPersistedJobs(
 ) {
   const db = getDb();
   const safeLimit = Math.max(1, Math.min(Math.floor(limit), 200));
-  const rows = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT id, provider, title, company_name AS "companyName", company_domain AS "companyDomain",
       description, location, country_code AS "countryCode", city, employment_type AS "employmentType",
       remote, salary_min AS "salaryMin", salary_max AS "salaryMax", salary_currency AS "salaryCurrency",
@@ -104,5 +104,5 @@ export async function listPersistedJobs(
     ORDER BY COALESCE(posted_at, last_seen_at) DESC NULLS LAST
     LIMIT ${safeLimit}
   `);
-  return rows;
+  return result.rows;
 }
