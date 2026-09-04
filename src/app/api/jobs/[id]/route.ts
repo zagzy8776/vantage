@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       ? sql`AND organization_id = ${auth.organizationId}`
       : sql``;
 
-    const rows = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT id, provider, title, company_name AS "companyName", company_domain AS "companyDomain",
         description, location, country_code AS "countryCode", city, employment_type AS "employmentType",
         remote, salary_min AS "salaryMin", salary_max AS "salaryMax", salary_currency AS "salaryCurrency",
@@ -29,9 +29,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         ${orgCondition}
       LIMIT 1
     `);
+    const job = result.rows[0];
 
-    if (!rows.length) return NextResponse.json({ error: "Job not found." }, { status: 404 });
-    return NextResponse.json({ job: rows[0] }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
+    if (!job) return NextResponse.json({ error: "Job not found." }, { status: 404 });
+    return NextResponse.json({ job }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
   } catch (error) {
     console.error(JSON.stringify({ diagnostic: "job_detail_failed", message: error instanceof Error ? error.message : String(error) }));
     return NextResponse.json({ error: "Job intelligence is temporarily unavailable." }, { status: 503 });
