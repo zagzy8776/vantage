@@ -1,6 +1,7 @@
-export type JobProvider = "adzuna" | "jsearch" | "jobspipe" | "hirebase" | "theirstack" | "web_discovery";
+export type JobProvider = "adzuna" | "jsearch" | "jobspipe" | "hirebase" | "theirstack";
+export type WebDiscoveryProvider = "web_discovery";
 export type RegionalJobProvider = "myjobmag" | "jobberman" | "hotnigerianjobs" | "jobgurus" | "jobsinnigeria" | "workinnigeria" | "fuzu" | "careerjet" | "brightermonday" | "careers24" | "careerjunction" | "pnet" | "careerlinkafrica" | "jobsphere" | "jobsearchafrica" | "postkazi" | "hiresasa" | "talentpot" | "worknation" | "closely" | "africajobline" | "jobconnectafrica" | "pacafrica";
-export type AnyJobProvider = JobProvider | RegionalJobProvider;
+export type AnyJobProvider = JobProvider | WebDiscoveryProvider | RegionalJobProvider;
 
 export type JobVerificationStatus = "unverified" | "needs_verification" | "direct_employer_verified" | "rejected" | "stale";
 
