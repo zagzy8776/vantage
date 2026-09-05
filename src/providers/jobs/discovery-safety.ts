@@ -89,7 +89,7 @@ export function sanitizeDiscoveredJob(job: NormalizedJob): NormalizedJob {
   const sourceIsAggregator = isKnownAggregatorUrl(job.sourceUrl);
   const reason = sourceIsAggregator
     ? "A third-party publisher URL was discovered, but Vantage will not present that redirect as a direct employer application path."
-    : "The discovered application URL is not yet tied to the employer domain or a recognized ATS; Vantage will verify the destination before presenting it as direct.");
+    : "The discovered application URL is not yet tied to the employer domain or a recognized ATS; Vantage will verify the destination before presenting it as direct.";
 
   return {
     ...job,
