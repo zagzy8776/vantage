@@ -2,6 +2,7 @@ import { runJobDiscovery as runGlobalJobDiscovery } from "./router";
 import { MARKET_REGIONAL_PRIORITY, REGIONAL_SOURCE_REGISTRY } from "./source-registry";
 import { crawlRegionalSource } from "./regional-source-engine";
 import { runDeepWebJobDiscovery } from "./deep-web-discovery";
+import { renderJobPages } from "./firecrawl-renderer";
 import { verifyEmployer } from "./verification";
 import type { JobProvider, JobSearchQuery, NormalizedJob, RegionalJobProvider } from "./types";
 
@@ -80,11 +81,15 @@ function mergeJobs(jobs: NormalizedJob[]) {
       salaryMax: stronger.salaryMax ?? job.salaryMax ?? existing.salaryMax,
       salaryCurrency: stronger.salaryCurrency ?? job.salaryCurrency ?? existing.salaryCurrency,
       requirements: Array.from(new Set([...(existing.requirements ?? []), ...(job.requirements ?? [])])).slice(0, 16),
-      verificationReasons: Array.from(new Set([...existing.verificationReasons, ...job.verificationReasons, `Also discovered via ${job.sourceName ?? job.provider}.`])),
+      verificationReasons: Array.from(new Set([...existing.verificationReasons, ...job.verificationReasons, `Also discovered via ${job.provider}.`])),
       verificationEvidence,
     });
   }
   return [...map.values()];
+}
+
+function hideProviderBranding(jobs: NormalizedJob[]) {
+  return jobs.map((job) => ({ ...job, sourceName: "Vantage intelligence" }));
 }
 
 export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Array<JobProvider | RegionalJobProvider>, options?: { verify?: boolean; deepWeb?: boolean }) {
@@ -111,8 +116,10 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
     deepWeb,
   ]);
 
-  const researchedDeepJobs = await verifyDeepCandidates(deepJobs);
-  const merged = mergeJobs([...globalDiscovery.jobs, ...regionalResults.flatMap((result) => result.jobs), ...researchedDeepJobs]);
+  const renderedDeepJobs = deepJobs.length ? await renderJobPages(deepJobs.map((job) => job.sourceUrl).filter(Boolean) as string[], query) : [];
+  const researchedDeepJobs = await verifyDeepCandidates([...deepJobs, ...renderedDeepJobs]);
+  const mergedRaw = mergeJobs([...globalDiscovery.jobs, ...regionalResults.flatMap((result) => result.jobs), ...researchedDeepJobs]);
+  const merged = hideProviderBranding(mergedRaw);
   const jobs = query.directOnly ? merged.filter((job) => job.verificationStatus === "direct_employer_verified") : merged;
   const providers = [
     ...globalDiscovery.providers,
