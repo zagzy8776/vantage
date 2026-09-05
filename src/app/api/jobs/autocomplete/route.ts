@@ -80,22 +80,27 @@ export async function GET(request: NextRequest) {
     ].join("\n");
 
     const generated = await generateWithFallback({
-      system: "You generate concise autocomplete vocabulary for a job search box. Never add explanations.",
-      user: prompt,
+      messages: [
+        { role: "system", content: "You generate concise autocomplete vocabulary for a job search box. Never add explanations." },
+        { role: "user", content: prompt },
+      ],
       temperature: 0,
       responseFormat: "json",
     });
-    const parsed = JSON.parse(generated.text) as { suggestions?: unknown };
+    const parsed = JSON.parse(generated.content) as { suggestions?: unknown };
     const aiSuggestions = cleanSuggestions(parsed.suggestions, query);
-    const merged = Array.from(new Set([...learned, ...aiSuggestions].map(normalize)))
-      .map((key) => [...learned, ...aiSuggestions].find((item) => normalize(item) === key)!)
-      .slice(0, 8);
+    const candidates = [...learned, ...aiSuggestions];
+    const merged: string[] = [];
+    const seen = new Set<string>();
+    for (const item of candidates) {
+      const key = normalize(item);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+      if (merged.length >= 8) break;
+    }
     return NextResponse.json({ suggestions: merged, source: learned.length ? "learned+intelligence" : "intelligence" });
   } catch {
-    return NextResponse.json({ suggestions: learnedFallback(query), source: "learned" });
+    return NextResponse.json({ suggestions: learned, source: "learned" });
   }
-}
-
-function learnedFallback(query: string) {
-  return [] as string[];
 }
