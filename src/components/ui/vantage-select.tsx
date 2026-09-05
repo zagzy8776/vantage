@@ -17,8 +17,11 @@ export function VantageSelect({ value, onChange, options, ariaLabel, className =
   const [activeIndex, setActiveIndex] = useState(() => Math.max(0, options.findIndex((option) => option.value === value)));
   const rootRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const typeaheadRef = useRef("");
+  const typeaheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listId = useId();
   const selected = options.find((option) => option.value === value) ?? options[0];
+  const activeOptionId = `${listId}-option-${activeIndex}`;
 
   useEffect(() => {
     const selectedIndex = options.findIndex((option) => option.value === value);
@@ -53,6 +56,18 @@ export function VantageSelect({ value, onChange, options, ariaLabel, className =
           onChange(option.value);
           setOpen(false);
         }
+        return;
+      }
+
+      if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const query = `${typeaheadRef.current}${event.key}`.toLowerCase();
+        typeaheadRef.current = query;
+        if (typeaheadTimerRef.current) clearTimeout(typeaheadTimerRef.current);
+        typeaheadTimerRef.current = setTimeout(() => { typeaheadRef.current = ""; }, 700);
+        const start = (activeIndex + 1) % options.length;
+        const ordered = [...options.slice(start), ...options.slice(0, start)];
+        const match = ordered.find((option) => option.label.toLowerCase().startsWith(query));
+        if (match) setActiveIndex(options.findIndex((option) => option.value === match.value));
       }
     };
 
@@ -61,6 +76,7 @@ export function VantageSelect({ value, onChange, options, ariaLabel, className =
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
+      if (typeaheadTimerRef.current) clearTimeout(typeaheadTimerRef.current);
     };
   }, [activeIndex, onChange, open, options]);
 
@@ -100,6 +116,7 @@ export function VantageSelect({ value, onChange, options, ariaLabel, className =
           id={listId}
           role="listbox"
           aria-label={ariaLabel}
+          aria-activedescendant={activeOptionId}
           className="vantage-select-menu absolute left-0 top-[calc(100%+8px)] z-50 max-h-72 w-full min-w-[180px] overflow-y-auto overscroll-contain rounded-xl border border-white/[.12] bg-[#111318]/[.98] p-1.5 shadow-[0_24px_70px_rgba(0,0,0,.55)] backdrop-blur-xl"
         >
           {options.map((option, index) => {
@@ -108,6 +125,7 @@ export function VantageSelect({ value, onChange, options, ariaLabel, className =
             return (
               <button
                 key={option.value}
+                id={`${listId}-option-${index}`}
                 ref={(element) => { optionRefs.current[index] = element; }}
                 type="button"
                 role="option"
