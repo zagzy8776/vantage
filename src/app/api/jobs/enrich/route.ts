@@ -15,17 +15,14 @@ export async function POST(request: NextRequest) {
     const requestedOffset = Number(body?.offset ?? 0); const offset = Number.isFinite(requestedOffset) ? Math.max(0, Math.floor(requestedOffset)) : 0;
     if (!ids.length) return NextResponse.json({ error: "Job ids are required." }, { status: 400 });
     if (offset >= ids.length) return NextResponse.json({ jobs: [], processed: 0, nextOffset: ids.length, done: true, aiAnalyzed: 0, evidenceReady: 0 });
-
     const batchIds = ids.slice(offset, offset + BATCH_SIZE);
     const ownedJobs = await getPersistedJobsByIds(batchIds, auth);
     const researched = await researchJobs(ownedJobs, ownedJobs.length);
     const results: typeof researched = [];
     let aiAnalyzed = 0;
-    for (const job of researched) {
-      const intelligence = await analyzeJob(job);
-      if (intelligence.source === "ai") aiAnalyzed += 1;
-      results.push({ ...job, intelligence });
-    }
+    const queue = [...researched]; const concurrency = Math.min(2, queue.length);
+    async function worker() { while (queue.length) { const job = queue.shift(); if (!job) return; const intelligence = await analyzeJob(job); if (intelligence.source === "ai") aiAnalyzed += 1; results.push({ ...job, intelligence }); } }
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
     await persistJobs(results, auth);
     const nextOffset = offset + batchIds.length;
     return NextResponse.json({ jobs: results, processed: batchIds.length, nextOffset, done: nextOffset >= ids.length, aiAnalyzed, evidenceReady: results.length, requested: batchIds.length, found: ownedJobs.length }, { status: 200, headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
