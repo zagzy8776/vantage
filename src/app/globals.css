@@ -153,6 +153,60 @@
     color: hsl(var(--foreground) / 0.34);
   }
 
+  /* The current search panel already exists in JobsPage. Brand its generic spinner
+     without changing the search logic, so users get a deliberate Vantage state. */
+  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > span.animate-spin {
+    width: 58px;
+    height: 58px;
+    border: 1px solid hsl(var(--border-strong));
+    border-radius: 9999px;
+    background: hsl(var(--background) / 0.72);
+    position: relative;
+    flex: 0 0 auto;
+    box-shadow: 0 0 0 1px hsl(var(--accent) / 0.04), 0 10px 35px hsl(0 0% 0% / 0.28);
+  }
+
+  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > span.animate-spin::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    border: 2px solid transparent;
+    border-top-color: hsl(var(--accent) / 0.9);
+    border-right-color: hsl(var(--accent) / 0.28);
+    animation: vantage-loader-spin 1.15s linear infinite;
+  }
+
+  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > span.animate-spin::after {
+    content: "V";
+    display: grid;
+    place-items: center;
+    width: 27px;
+    height: 27px;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 7px;
+    background: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    box-shadow: 0 0 24px hsl(var(--accent) / 0.16);
+  }
+
+  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > div::after {
+    content: "VANTAGE · CONNECTING TO LIVE JOB SOURCES";
+    display: block;
+    margin-top: 7px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: hsl(var(--foreground) / 0.28);
+    animation: vantage-research-feed 10s steps(1, end) infinite;
+  }
+
   @keyframes vantage-loader-spin {
     to { transform: rotate(360deg); }
   }
