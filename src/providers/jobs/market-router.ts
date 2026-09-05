@@ -61,7 +61,8 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
     Promise.all(regional.map((provider) => crawlRegionalSource(provider, query))),
   ]);
 
-  const jobs = mergeJobs([...globalDiscovery.jobs, ...regionalResults.flatMap((result) => result.jobs)]);
+  const merged = mergeJobs([...globalDiscovery.jobs, ...regionalResults.flatMap((result) => result.jobs)]);
+  const jobs = query.directOnly ? merged.filter((job) => job.verificationStatus === "direct_employer_verified") : merged;
   const providers = [
     ...globalDiscovery.providers,
     ...regionalResults.map((result) => ({ provider: result.provider, status: result.status, count: result.jobs.length, totalCount: result.totalCount ?? null, errorMessage: result.errorMessage, acquisition: result.acquisition ?? [] })),
@@ -80,8 +81,8 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
     pagination,
     discoveryCount: jobs.length,
     verification: {
-      attempted: jobs.length,
-      verified: jobs.filter((job) => job.verificationStatus === "direct_employer_verified").length,
+      attempted: merged.length,
+      verified: merged.filter((job) => job.verificationStatus === "direct_employer_verified").length,
     },
   };
 }
