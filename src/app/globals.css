@@ -4,244 +4,66 @@
 
 @layer base {
   :root {
-    /*
-     * VANTAGE design tokens — dark-first, single source of truth.
-     */
     --background: 222 22% 6%;
     --surface: 222 18% 9%;
     --surface-2: 222 16% 12%;
     --border: 222 12% 16%;
     --border-strong: 222 12% 24%;
-
     --foreground: 210 30% 96%;
     --muted: 215 14% 68%;
     --subtle: 215 10% 48%;
-
     --accent: 42 96% 56%;
     --accent-foreground: 30 40% 8%;
-
     --success: 158 64% 52%;
     --warning: 38 92% 54%;
     --danger: 0 72% 62%;
     --info: 205 89% 63%;
-
     --score-exceptional: 158 72% 50%;
     --score-high: 109 58% 51%;
     --score-promising: 40 92% 55%;
     --score-moderate: 24 90% 60%;
     --score-low: 220 9% 55%;
-
     --radius: 0.75rem;
   }
-
-  *,
-  ::before,
-  ::after {
-    border-color: hsl(var(--border));
-  }
-
-  html {
-    color-scheme: dark;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  body {
-    @apply bg-background text-foreground antialiased;
-    text-rendering: optimizeLegibility;
-    background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--accent) / 0.06), transparent),
-      radial-gradient(ellipse 60% 40% at 100% 0%, hsl(222 40% 20% / 0.25), transparent);
-    background-attachment: fixed;
-  }
-
-  ::selection {
-    background: hsl(var(--accent) / 0.3);
-  }
-
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: hsl(var(--border-strong));
-    border-radius: 5px;
-    border: 2px solid hsl(var(--background));
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--border-strong)) transparent;
-  }
+  *, ::before, ::after { border-color: hsl(var(--border)); }
+  html { color-scheme: dark; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  body { @apply bg-background text-foreground antialiased; text-rendering: optimizeLegibility; background-image: radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--accent) / 0.06), transparent), radial-gradient(ellipse 60% 40% at 100% 0%, hsl(222 40% 20% / 0.25), transparent); background-attachment: fixed; }
+  ::selection { background: hsl(var(--accent) / 0.3); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--border-strong)); border-radius: 5px; border: 2px solid hsl(var(--background)); }
+  ::-webkit-scrollbar-track { background: transparent; }
+  * { scrollbar-width: thin; scrollbar-color: hsl(var(--border-strong)) transparent; }
 }
 
-.no-scrollbar {
-  scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
 @layer components {
-  .panel {
-    @apply bg-surface/80 border border-border rounded-xl shadow-card backdrop-blur-sm;
-  }
+  .panel { @apply bg-surface/80 border border-border rounded-xl shadow-card backdrop-blur-sm; }
+  .panel-header { @apply flex items-center justify-between gap-3 px-4 py-3 border-b border-border/80; }
+  .section-label { @apply text-[10px] font-mono font-semibold uppercase tracking-[0.16em] text-subtle; }
 
-  .panel-header {
-    @apply flex items-center justify-between gap-3 px-4 py-3 border-b border-border/80;
-  }
+  .vantage-research-loader { position: relative; display: grid; place-items: center; width: 58px; height: 58px; flex: 0 0 auto; border-radius: 9999px; border: 1px solid hsl(var(--border-strong)); background: hsl(var(--background) / 0.72); box-shadow: 0 0 0 1px hsl(var(--accent) / 0.04), 0 10px 35px hsl(0 0% 0% / 0.28); }
+  .vantage-research-loader::before { content: ""; position: absolute; inset: -4px; border-radius: inherit; border: 2px solid transparent; border-top-color: hsl(var(--accent) / 0.9); border-right-color: hsl(var(--accent) / 0.28); animation: vantage-loader-spin 1.15s linear infinite; }
+  .vantage-research-loader::after { content: "V"; display: grid; place-items: center; width: 27px; height: 27px; border-radius: 7px; background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); font-size: 12px; font-weight: 900; letter-spacing: -0.04em; box-shadow: 0 0 24px hsl(var(--accent) / 0.16); }
+  .vantage-research-feed { overflow: hidden; min-height: 18px; }
+  .vantage-research-feed::after { content: "VANTAGE · CONNECTING TO LIVE JOB SOURCES"; display: block; animation: vantage-research-feed 10s steps(1, end) infinite; font-size: 9px; font-weight: 700; letter-spacing: 0.16em; line-height: 1.5; color: hsl(var(--foreground) / 0.34); }
+  .vantage-job-arrival { animation: vantage-job-arrival 420ms ease-out both; }
+  .vantage-live-panel { box-shadow: 0 18px 60px hsl(0 0% 0% / 0.18); }
 
-  .section-label {
-    @apply text-[10px] font-mono font-semibold uppercase tracking-[0.16em] text-subtle;
-  }
+  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > span.animate-spin { width: 58px; height: 58px; border: 1px solid hsl(var(--border-strong)); border-radius: 9999px; background: hsl(var(--background) / 0.72); position: relative; flex: 0 0 auto; box-shadow: 0 0 0 1px hsl(var(--accent) / 0.04), 0 10px 35px hsl(0 0% 0% / 0.28); }
+  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > span.animate-spin::before { content: ""; position: absolute; inset: -4px; border-radius: inherit; border: 2px solid transparent; border-top-color: hsl(var(--accent) / 0.9); border-right-color: hsl(var(--accent) / 0.28); animation: vantage-loader-spin 1.15s linear infinite; }
+  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > span.animate-spin::after { content: "V"; display: grid; place-items: center; width: 27px; height: 27px; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border-radius: 7px; background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); font-size: 12px; font-weight: 900; letter-spacing: -0.04em; box-shadow: 0 0 24px hsl(var(--accent) / 0.16); }
+  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > div::after { content: "VANTAGE · CONNECTING TO LIVE JOB SOURCES"; display: block; margin-top: 7px; font-size: 9px; font-weight: 700; letter-spacing: 0.14em; color: hsl(var(--foreground) / 0.28); animation: vantage-research-feed 10s steps(1, end) infinite; }
 
-  .vantage-research-loader {
-    position: relative;
-    display: grid;
-    place-items: center;
-    width: 58px;
-    height: 58px;
-    flex: 0 0 auto;
-    border-radius: 9999px;
-    border: 1px solid hsl(var(--border-strong));
-    background: hsl(var(--background) / 0.72);
-    box-shadow: 0 0 0 1px hsl(var(--accent) / 0.04), 0 10px 35px hsl(0 0% 0% / 0.28);
-  }
-
-  .vantage-research-loader::before {
-    content: "";
-    position: absolute;
-    inset: -4px;
-    border-radius: inherit;
-    border: 2px solid transparent;
-    border-top-color: hsl(var(--accent) / 0.9);
-    border-right-color: hsl(var(--accent) / 0.28);
-    animation: vantage-loader-spin 1.15s linear infinite;
-  }
-
-  .vantage-research-loader::after {
-    content: "V";
-    display: grid;
-    place-items: center;
-    width: 27px;
-    height: 27px;
-    border-radius: 7px;
-    background: hsl(var(--accent));
-    color: hsl(var(--accent-foreground));
-    font-size: 12px;
-    font-weight: 900;
-    letter-spacing: -0.04em;
-    box-shadow: 0 0 24px hsl(var(--accent) / 0.16);
-  }
-
-  .vantage-research-feed {
-    overflow: hidden;
-    min-height: 18px;
-  }
-
-  .vantage-research-feed::after {
-    content: "VANTAGE · CONNECTING TO LIVE JOB SOURCES";
-    display: block;
-    animation: vantage-research-feed 10s steps(1, end) infinite;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    line-height: 1.5;
-    color: hsl(var(--foreground) / 0.34);
-  }
-
-  /* The current search panel already exists in JobsPage. Brand its generic spinner
-     without changing the search logic, so users get a deliberate Vantage state. */
-  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > span.animate-spin {
-    width: 58px;
-    height: 58px;
-    border: 1px solid hsl(var(--border-strong));
-    border-radius: 9999px;
-    background: hsl(var(--background) / 0.72);
-    position: relative;
-    flex: 0 0 auto;
-    box-shadow: 0 0 0 1px hsl(var(--accent) / 0.04), 0 10px 35px hsl(0 0% 0% / 0.28);
-  }
-
-  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > span.animate-spin::before {
-    content: "";
-    position: absolute;
-    inset: -4px;
-    border-radius: inherit;
-    border: 2px solid transparent;
-    border-top-color: hsl(var(--accent) / 0.9);
-    border-right-color: hsl(var(--accent) / 0.28);
-    animation: vantage-loader-spin 1.15s linear infinite;
-  }
-
-  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > span.animate-spin::after {
-    content: "V";
-    display: grid;
-    place-items: center;
-    width: 27px;
-    height: 27px;
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    border-radius: 7px;
-    background: hsl(var(--accent));
-    color: hsl(var(--accent-foreground));
-    font-size: 12px;
-    font-weight: 900;
-    letter-spacing: -0.04em;
-    box-shadow: 0 0 24px hsl(var(--accent) / 0.16);
-  }
-
-  main div[class*="mt-8"][class*="rounded-2xl"][class*="bg-white/[.025]"][class*="p-5"] > div.flex.items-center.gap-3 > div::after {
-    content: "VANTAGE · CONNECTING TO LIVE JOB SOURCES";
-    display: block;
-    margin-top: 7px;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    color: hsl(var(--foreground) / 0.28);
-    animation: vantage-research-feed 10s steps(1, end) infinite;
-  }
-
-  @keyframes vantage-loader-spin {
-    to { transform: rotate(360deg); }
-  }
-
-  @keyframes vantage-research-feed {
-    0%, 18% { content: "VANTAGE · CONNECTING TO LIVE JOB SOURCES"; }
-    19%, 38% { content: "VANTAGE · COMPARING PROVIDER RESULTS"; }
-    39%, 58% { content: "VANTAGE · RESOLVING EMPLOYER IDENTITY"; }
-    59%, 78% { content: "VANTAGE · FINDING PUBLIC APPLICATION PATHS"; }
-    79%, 100% { content: "VANTAGE · PREPARING EVIDENCE FOR YOU"; }
-  }
+  @keyframes vantage-loader-spin { to { transform: rotate(360deg); } }
+  @keyframes vantage-job-arrival { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes vantage-research-feed { 0%, 18% { content: "VANTAGE · CONNECTING TO LIVE JOB SOURCES"; } 19%, 38% { content: "VANTAGE · COMPARING PROVIDER RESULTS"; } 39%, 58% { content: "VANTAGE · RESOLVING EMPLOYER IDENTITY"; } 59%, 78% { content: "VANTAGE · FINDING PUBLIC APPLICATION PATHS"; } 79%, 100% { content: "VANTAGE · PREPARING EVIDENCE FOR YOU"; } }
 }
 
 @layer utilities {
-  .tabular {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .modal-backdrop {
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-  }
-
-  .truncate-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    * {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-    }
-  }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .modal-backdrop { backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  .truncate-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
 }
