@@ -38,22 +38,7 @@ function parseJobIntelligence(content: string): JobIntelligence {
 }
 
 function promptFor(job: NormalizedJob) {
-  return `Analyze this job listing for a candidate. Use ONLY the supplied listing text and structured fields. Public-source research may have expanded the listing, but treat it as evidence, not permission to guess. Do not invent requirements, salary, employer facts, eligibility rules, or application steps. If something is not stated, put it in unknowns or leave the optional field empty.
-
-Return JSON only with exactly these fields:
-summary (string), seniority (string|null), mustHave (string[]), niceToHave (string[]), skills (string[]), experience (string|null), education (string|null), responsibilities (string[]), locationRequirement (string|null), remotePolicy (string|null), applicationAdvice (string[]), unknowns (string[]), confidence (integer 0-100).
-
-Job title: ${job.title}
-Employer: ${job.companyName}
-Location: ${job.location ?? "not stated"}
-Employment type: ${job.employmentType ?? "not stated"}
-Remote field: ${job.remote === undefined ? "not stated" : job.remote ? "remote" : "not remote"}
-Employer website: ${job.companyWebsite ?? "not established"}
-Application URL: ${job.applyUrl ?? "not established"}
-Structured requirements: ${(job.requirements ?? []).join(" | ") || "none"}
-
-Listing and researched public-source text:
-${(job.description ?? "").slice(0, 26000)}`;
+  return `Analyze this job listing for a candidate. Use ONLY the supplied listing text and structured fields. Public-source research may have expanded the listing, but treat it as evidence, not permission to guess. Do not invent requirements, salary, employer facts, eligibility rules, or application steps. If something is not stated, put it in unknowns or leave the optional field empty. If the source text is partial, explicitly reflect that uncertainty in unknowns and lower confidence rather than filling gaps from general knowledge.\n\nReturn JSON only with exactly these fields:\nsummary (string), seniority (string|null), mustHave (string[]), niceToHave (string[]), skills (string[]), experience (string|null), education (string|null), responsibilities (string[]), locationRequirement (string|null), remotePolicy (string|null), applicationAdvice (string[]), unknowns (string[]), confidence (integer 0-100).\n\nJob title: ${job.title}\nEmployer: ${job.companyName}\nLocation: ${job.location ?? "not stated"}\nEmployment type: ${job.employmentType ?? "not stated"}\nRemote field: ${job.remote === undefined ? "not stated" : job.remote ? "remote" : "not remote"}\nEmployer website: ${job.companyWebsite ?? "not established"}\nApplication URL: ${job.applyUrl ?? "not established"}\nStructured requirements: ${(job.requirements ?? []).join(" | ") || "none"}\n\nListing and researched public-source text:\n${(job.description ?? "").slice(0, 26000)}`;
 }
 
 const SYSTEM = "You are Vantage Job Intelligence. Your job is to turn real job-source and public employer-page evidence into a precise description of what the employer is asking for. Never fill gaps with general assumptions. Separate must-have requirements from preferences. Treat missing information as unknown. A third-party job provider is evidence of discovery, not evidence of employer ownership.";
@@ -91,13 +76,21 @@ export async function analyzeJob(job: NormalizedJob): Promise<JobIntelligence | 
   }
 }
 
-export async function analyzeJobs(jobs: NormalizedJob[], maxJobs = 12) {
-  const researchLimit = Math.max(maxJobs, Math.min(Number(process.env.JOB_SOURCE_RESEARCH_LIMIT) || 20, jobs.length));
+export async function analyzeJobs(jobs: NormalizedJob[], maxJobs = jobs.length) {
+  // Research every listing that can be shown. The limit is an explicit safety valve for
+  // operators, not a hidden product cap. By default, every returned listing is researched.
+  const configuredResearchLimit = Number(process.env.JOB_SOURCE_RESEARCH_LIMIT);
+  const researchLimit = Number.isFinite(configuredResearchLimit) && configuredResearchLimit > 0
+    ? Math.min(Math.floor(configuredResearchLimit), jobs.length)
+    : jobs.length;
   const researched = await researchJobs(jobs, researchLimit);
-  const selected = researched.filter((job) => (job.description?.trim().length ?? 0) >= 40 || (job.requirements?.length ?? 0) > 0).slice(0, maxJobs);
+  const selected = researched
+    .filter((job) => (job.description?.trim().length ?? 0) >= 40 || (job.requirements?.length ?? 0) > 0)
+    .slice(0, Math.max(0, Math.min(maxJobs, researched.length)));
   const queue = [...selected];
   const results = new Map<string, JobIntelligence>();
-  const concurrency = Math.max(1, Math.min(Number(process.env.JOB_AI_ANALYSIS_CONCURRENCY) || 2, 4));
+  const configuredConcurrency = Number(process.env.JOB_AI_ANALYSIS_CONCURRENCY) || 2;
+  const concurrency = Math.max(1, Math.min(configuredConcurrency, 4));
 
   async function worker() {
     while (queue.length) {
