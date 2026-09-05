@@ -32,7 +32,9 @@ export async function POST(request: NextRequest) {
     const cursor = typeof cursors.jsearch === "string" ? cursors.jsearch : undefined;
 
     const discovery = await runJobDiscovery({ title, country, countryCode, city, remote, limit, postedWithinDays, page, cursor }, providers);
-    const intelligence = await analyzeJobs(discovery.jobs, page === 1 ? Math.min(12, discovery.jobs.length) : 0);
+    // Every listing Vantage returns is eligible for the same evidence + intelligence pipeline.
+    // This intentionally removes the old hidden 12-job analysis cap.
+    const intelligence = await analyzeJobs(discovery.jobs, discovery.jobs.length);
     const result = { ...discovery, jobs: intelligence.jobs };
 
     let persistedCount = 0;
