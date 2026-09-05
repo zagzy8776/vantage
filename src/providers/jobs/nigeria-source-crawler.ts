@@ -68,6 +68,17 @@ function parseJsonLd(html: string): Record<string, unknown>[] {
   }
   return result;
 }
+function feedValue(item: string, names: string[]) {
+  for (const name of names) {
+    const pattern = new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, "i");
+    const value = strip(item.match(pattern)?.[1] ?? "");
+    if (value) return value;
+  }
+  return undefined;
+}
+function feedLink(item: string, base: string) {
+  return cleanUrl(item.match(/<link[^>]*href=["']([^"']+)["']/i)?.[1] ?? item.match(/<link[^>]*>([^<]+)<\/link>/i)?.[1], base);
+}
 function posting(item: Record<string, unknown>, source: NigeriaWebSource, url: string): NormalizedJob | null {
   const type = item["@type"];
   if (!(type === "JobPosting" || (Array.isArray(type) && type.includes("JobPosting")))) return null;
@@ -111,15 +122,22 @@ function parseFeed(xml: string, source: NigeriaWebSource, feedUrl: string, query
   const output: NormalizedJob[] = [];
   for (const match of xml.matchAll(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi)) {
     const item = match[0];
-    const title = strip(item.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "");
-    const link = cleanUrl(item.match(/<link[^>]*href=["']([^"']+)["']/i)?.[1] ?? item.match(/<link[^>]*>([^<]+)<\/link>/i)?.[1], feedUrl);
+    const title = feedValue(item, ["title"]);
+    const link = feedLink(item, feedUrl);
     if (!title || !link || !queryMatches(title, query.title)) continue;
-    const description = strip(item.match(/<(?:description|summary|content:encoded)[^>]*>([\s\S]*?)<\/(?:description|summary|content:encoded)>/i)?.[1] ?? "");
-    const pub = strip(item.match(/<(?:pubDate|published|updated)[^>]*>([\s\S]*?)<\/(?:pubDate|published|updated)>/i)?.[1] ?? "");
+    const description = feedValue(item, ["description", "summary", "content:encoded"]) ?? "";
+    const companyName = feedValue(item, ["company", "companyname", "employer", "organization", "hiringorganization", "dc:creator", "creator", "author"]) ?? "Unknown employer";
+    const companyWebsite = cleanUrl(feedValue(item, ["companyurl", "companywebsite", "employerurl", "organizationurl"]), link);
+    const location = feedValue(item, ["location", "joblocation", "city"]);
+    const employmentType = feedValue(item, ["employmenttype", "jobtype"]);
+    const postedRaw = feedValue(item, ["pubDate", "published", "updated", "dateposted"]);
+    const postedDate = postedRaw && !Number.isNaN(new Date(postedRaw).getTime()) ? new Date(postedRaw).toISOString() : undefined;
     output.push({
-      id: stableId(source.provider, link, title, "unknown"), provider: source.provider, title, companyName: "Unknown employer", description,
-      countryCode: "NG", sourceUrl: link, sourceName: `${source.name} feed`, postedAt: pub && !Number.isNaN(new Date(pub).getTime()) ? new Date(pub).toISOString() : undefined,
-      requirements: [], verificationStatus: "unverified", verificationReasons: [`Collected from ${source.name} public feed; employer identity must be resolved independently.`], verificationEvidence: evidence(`${source.name} feed`, link),
+      id: stableId(source.provider, link, title, companyName), provider: source.provider, title, companyName,
+      companyWebsite, companyDomain: domain(companyWebsite), description, location, countryCode: "NG", employmentType,
+      sourceUrl: link, sourceName: `${source.name} feed`, postedAt: postedDate, requirements: [], verificationStatus: "unverified",
+      verificationReasons: [`Collected from ${source.name} public feed; employer identity and application path must be verified independently.`],
+      verificationEvidence: evidence(`${source.name} feed`, link),
     });
   }
   return output;
