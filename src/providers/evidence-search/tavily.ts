@@ -13,11 +13,12 @@ export class TavilyEvidenceSearchProvider implements EvidenceSearchProvider {
     const apiKey = process.env.TAVILY_API_KEY?.trim();
     if (!apiKey) return { provider: this.name, status: "unavailable", results: [], evidence: [], queryCount: 0, errorMessage: "TAVILY_API_KEY is not configured." };
     const searchQuery = query.query ?? [query.businessName, query.category, query.location].filter(Boolean).join(" ");
+    const deep = query.category === "employment" || /\b(careers?|jobs?|apply|hiring|employer|recruit|contact|phone|email)\b/i.test(searchQuery);
     try {
       const response = await fetch("https://api.tavily.com/search", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, topic: "general", search_depth: "basic", max_results: Math.min(Math.max(query.limit, 1), 10), include_answer: false, include_raw_content: false, include_images: false, ...(query.country ? { country: query.country } : {}) }),
+        body: JSON.stringify({ query: searchQuery, topic: "general", search_depth: deep ? "advanced" : "basic", max_results: Math.min(Math.max(query.limit, 1), 10), include_answer: false, include_raw_content: deep, include_images: false, ...(query.country ? { country: query.country } : {}) }),
         cache: "no-store",
         signal: AbortSignal.timeout(Number(process.env.WEB_SEARCH_TIMEOUT_MS) || 20_000),
       });
