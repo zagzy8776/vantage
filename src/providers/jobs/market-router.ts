@@ -120,7 +120,7 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
 
   const safeDeepJobs = sanitizeDiscoveredJobs(deepJobs);
   const renderedDeepJobs = safeDeepJobs.length ? await renderJobPages(safeDeepJobs.map((job) => job.sourceUrl).filter(Boolean) as string[], query) : [];
-  const researchedDeepJobs = verifyDeepCandidates(sanitizeDiscoveredJobs([...safeDeepJobs, ...renderedDeepJobs]));
+  const researchedDeepJobs = await verifyDeepCandidates(sanitizeDiscoveredJobs([...safeDeepJobs, ...renderedDeepJobs]));
   const mergedRaw = mergeJobs([...globalDiscovery.jobs, ...regionalResults.flatMap((result) => result.jobs), ...researchedDeepJobs]);
   const merged = hideProviderBranding(mergedRaw);
   const jobs = query.directOnly ? merged.filter((job) => job.verificationStatus === "direct_employer_verified") : merged;
