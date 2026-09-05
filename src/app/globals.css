@@ -97,6 +97,73 @@
   .section-label {
     @apply text-[10px] font-mono font-semibold uppercase tracking-[0.16em] text-subtle;
   }
+
+  .vantage-research-loader {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 58px;
+    height: 58px;
+    flex: 0 0 auto;
+    border-radius: 9999px;
+    border: 1px solid hsl(var(--border-strong));
+    background: hsl(var(--background) / 0.72);
+    box-shadow: 0 0 0 1px hsl(var(--accent) / 0.04), 0 10px 35px hsl(0 0% 0% / 0.28);
+  }
+
+  .vantage-research-loader::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    border: 2px solid transparent;
+    border-top-color: hsl(var(--accent) / 0.9);
+    border-right-color: hsl(var(--accent) / 0.28);
+    animation: vantage-loader-spin 1.15s linear infinite;
+  }
+
+  .vantage-research-loader::after {
+    content: "V";
+    display: grid;
+    place-items: center;
+    width: 27px;
+    height: 27px;
+    border-radius: 7px;
+    background: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    box-shadow: 0 0 24px hsl(var(--accent) / 0.16);
+  }
+
+  .vantage-research-feed {
+    overflow: hidden;
+    min-height: 18px;
+  }
+
+  .vantage-research-feed::after {
+    content: "VANTAGE · CONNECTING TO LIVE JOB SOURCES";
+    display: block;
+    animation: vantage-research-feed 10s steps(1, end) infinite;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    line-height: 1.5;
+    color: hsl(var(--foreground) / 0.34);
+  }
+
+  @keyframes vantage-loader-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes vantage-research-feed {
+    0%, 18% { content: "VANTAGE · CONNECTING TO LIVE JOB SOURCES"; }
+    19%, 38% { content: "VANTAGE · COMPARING PROVIDER RESULTS"; }
+    39%, 58% { content: "VANTAGE · RESOLVING EMPLOYER IDENTITY"; }
+    59%, 78% { content: "VANTAGE · FINDING PUBLIC APPLICATION PATHS"; }
+    79%, 100% { content: "VANTAGE · PREPARING EVIDENCE FOR YOU"; }
+  }
 }
 
 @layer utilities {
