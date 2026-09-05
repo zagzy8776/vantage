@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
             const discovery = await runJobDiscovery(query, [provider], { verify: false });
             const summary = discovery.providers.find((item) => item.provider === provider);
             const providerJobs = discovery.jobs.filter((job) => job.provider === provider);
-            result = { provider, status: summary?.status ?? (providerJobs.length ? "success" : "zero-results"), jobs: providerJobs, totalCount: summary?.totalCount ?? undefined, errorMessage: summary?.errorMessage ?? undefined, hasMore: Boolean(summary?.hasMore), nextCursor: summary?.nextCursor ?? undefined };
+            const providerPage = discovery.pagination[provider];
+            result = { provider, status: summary?.status ?? (providerJobs.length ? "success" : "zero-results"), jobs: providerJobs, totalCount: providerPage?.totalCount ?? undefined, errorMessage: summary?.errorMessage ?? undefined, hasMore: Boolean(providerPage?.hasMore), nextCursor: providerPage?.nextCursor ?? undefined };
           } catch (error) { result = { provider, status: "failed", jobs: [], errorMessage: error instanceof Error ? error.message : "Provider request failed." }; }
           results.set(provider, result); const incoming = withIntelligence(result.jobs); cumulative = mergeJobs(cumulative, incoming);
           state.status = result.status === "failed" || result.status === "rate-limited" ? "failed" : "complete"; state.count = result.jobs.length; state.totalCount = result.totalCount; state.nextCursor = result.nextCursor; state.hasMore = result.hasMore; state.errorMessage = result.errorMessage;
