@@ -28,11 +28,20 @@ function publicEmployerCandidate(job: NormalizedJob) {
   }
 }
 
+function employerDomain(urlValue?: string) {
+  if (!urlValue) return undefined;
+  try { return new URL(urlValue).hostname.toLowerCase().replace(/^www\./, ""); } catch { return undefined; }
+}
+
 async function verifyDeepCandidates(jobs: NormalizedJob[]) {
   const prioritized = jobs
-    .map((job) => ({ ...job, companyWebsite: publicEmployerCandidate(job), companyDomain: job.companyDomain ?? publicEmployerCandidate(job) && (() => { try { return new URL(publicEmployerCandidate(job)!).hostname.toLowerCase().replace(/^www\./, ""); } catch { return undefined; } })() }))
+    .map((job) => {
+      const employerWebsite = publicEmployerCandidate(job);
+      return { ...job, companyWebsite: employerWebsite, companyDomain: job.companyDomain ?? employerDomain(employerWebsite) };
+    })
     .filter((job) => Boolean(job.companyWebsite))
     .slice(0, DEEP_VERIFY_LIMIT);
+
   const verified = await Promise.all(prioritized.map(async (job) => {
     const result = await verifyEmployer(job);
     return {
@@ -78,12 +87,13 @@ function mergeJobs(jobs: NormalizedJob[]) {
   return [...map.values()];
 }
 
-export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Array<JobProvider | RegionalJobProvider>, options?: { verify?: boolean }) {
+export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Array<JobProvider | RegionalJobProvider>, options?: { verify?: boolean; deepWeb?: boolean }) {
   const country = (query.countryCode ?? "NG").toUpperCase();
   const requested = selected?.length ? Array.from(new Set(selected)) : undefined;
   const defaultRegional = MARKET_REGIONAL_PRIORITY[country] ?? [];
   const regional = (requested?.filter((provider): provider is RegionalJobProvider => REGIONAL_PROVIDERS.has(provider as RegionalJobProvider)) ?? defaultRegional).slice(0, 12);
   const global = (requested?.filter((provider): provider is JobProvider => GLOBAL_PROVIDERS.includes(provider as JobProvider)) ?? GLOBAL_PROVIDERS).filter((provider) => GLOBAL_PROVIDERS.includes(provider));
+  const deepWeb = options?.deepWeb === false ? Promise.resolve([] as NormalizedJob[]) : runDeepWebJobDiscovery(query);
 
   const emptyGlobal = {
     jobs: [] as NormalizedJob[],
@@ -98,7 +108,7 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
   const [globalDiscovery, regionalResults, deepJobs] = await Promise.all([
     global.length ? runGlobalJobDiscovery(query, global, options) : Promise.resolve(emptyGlobal),
     Promise.all(regional.map((provider) => crawlRegionalSource(provider, query))),
-    runDeepWebJobDiscovery(query),
+    deepWeb,
   ]);
 
   const researchedDeepJobs = await verifyDeepCandidates(deepJobs);
