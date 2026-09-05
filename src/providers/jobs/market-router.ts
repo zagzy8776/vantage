@@ -3,6 +3,7 @@ import { MARKET_REGIONAL_PRIORITY, REGIONAL_SOURCE_REGISTRY } from "./source-reg
 import { crawlRegionalSource } from "./regional-source-engine";
 import { runDeepWebJobDiscovery } from "./deep-web-discovery";
 import { renderJobPages } from "./firecrawl-renderer";
+import { sanitizeDiscoveredJobs } from "./discovery-safety";
 import { verifyEmployer } from "./verification";
 import type { JobProvider, JobSearchQuery, NormalizedJob, RegionalJobProvider } from "./types";
 
@@ -117,8 +118,9 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
     deepWeb,
   ]);
 
-  const renderedDeepJobs = deepJobs.length ? await renderJobPages(deepJobs.map((job) => job.sourceUrl).filter(Boolean) as string[], query) : [];
-  const researchedDeepJobs = await verifyDeepCandidates([...deepJobs, ...renderedDeepJobs]);
+  const safeDeepJobs = sanitizeDiscoveredJobs(deepJobs);
+  const renderedDeepJobs = safeDeepJobs.length ? await renderJobPages(safeDeepJobs.map((job) => job.sourceUrl).filter(Boolean) as string[], query) : [];
+  const researchedDeepJobs = verifyDeepCandidates(sanitizeDiscoveredJobs([...safeDeepJobs, ...renderedDeepJobs]));
   const mergedRaw = mergeJobs([...globalDiscovery.jobs, ...regionalResults.flatMap((result) => result.jobs), ...researchedDeepJobs]);
   const merged = hideProviderBranding(mergedRaw);
   const jobs = query.directOnly ? merged.filter((job) => job.verificationStatus === "direct_employer_verified") : merged;
