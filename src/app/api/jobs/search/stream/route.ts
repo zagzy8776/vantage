@@ -3,6 +3,7 @@ import { requireAuth } from "@/auth/middleware";
 import { runJobDiscovery } from "@/providers/jobs/router";
 import { persistJobs } from "@/providers/jobs/persistence";
 import { deterministicIntelligence } from "@/services/jobs/analysis";
+import { recordJobSearchHistory } from "@/services/jobs/search-history";
 import { researchJobs } from "@/services/jobs/source-research";
 import { resolveApplicationAndContactsBatch } from "@/services/jobs/application-resolver";
 import type { JobProvider, JobProviderResult, JobSearchQuery, NormalizedJob } from "@/providers/jobs/types";
@@ -33,6 +34,7 @@ export async function POST(request: NextRequest) {
   const selected = Array.isArray(body?.providers) ? body.providers.filter((value): value is JobProvider => typeof value === "string" && providerNames.has(value as JobProvider)) : PROVIDERS;
   const providers = selected.length ? selected : PROVIDERS;
   const remote = typeof body?.remote === "boolean" ? body.remote : undefined;
+  const directOnly = typeof body?.directOnly === "boolean" ? body.directOnly : false;
   const countryCode = typeof body?.countryCode === "string" ? body.countryCode.trim().toUpperCase() : undefined;
   const country = typeof body?.country === "string" ? body.country.trim() : undefined;
   const city = typeof body?.city === "string" ? body.city.trim() : undefined;
@@ -68,8 +70,9 @@ export async function POST(request: NextRequest) {
       }));
       const pagination: Record<string, { totalCount?: number; nextCursor?: string; hasMore: boolean }> = {}; for (const provider of providers) { const result = results.get(provider); pagination[provider] = { totalCount: result?.totalCount, nextCursor: result?.nextCursor, hasMore: Boolean(result?.hasMore) }; }
       const failures = states.filter((state) => state.status === "failed").length; const ready = cumulative.filter(evidenceReady).length;
+      try { await recordJobSearchHistory({ query: title, countryCode, country, city, remote, directOnly, postedWithinDays, providers, resultCount: cumulative.length }, auth); } catch (error) { console.error(JSON.stringify({ diagnostic: "job_search_history_record_failed", message: error instanceof Error ? error.message : String(error) })); }
       write({ type: "complete", jobs: cumulative, providers: states, pagination, diagnostics: { providersFailed: failures, providersConfigured: providers.length, rawProviderHits: states.reduce((sum, state) => sum + state.count, 0), dedupedReturned: cumulative.length, providerAdvertisedTotals: states.reduce((sum, state) => sum + (state.totalCount ?? 0), 0), returned: cumulative.length, applicationPaths: cumulative.filter((job) => Boolean(job.applyUrl)).length, employerSources: cumulative.filter((job) => Boolean(job.companyWebsite)).length, employerContacts: cumulative.filter((job) => Boolean(job.companyPhone || job.companyEmail)).length, evidenceReady: ready, aiAnalyzed: 0 } });
-    } catch (error) { write({ type: "complete", jobs: cumulative, providers: states, pagination: {}, diagnostics: { streamError: error instanceof Error ? error.message : String(error), returned: cumulative.length, evidenceReady: cumulative.filter(evidenceReady).length } }); }
+    } catch (error) { try { await recordJobSearchHistory({ query: title, countryCode, country, city, remote, directOnly, postedWithinDays, providers, resultCount: cumulative.length }, auth); } catch {} write({ type: "complete", jobs: cumulative, providers: states, pagination: {}, diagnostics: { streamError: error instanceof Error ? error.message : String(error), returned: cumulative.length, evidenceReady: cumulative.filter(evidenceReady).length } }); }
     finally { closed = true; controller.close(); }
   }});
   return new Response(stream, { status: 200, headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store, no-cache, must-revalidate", "X-Accel-Buffering": "no" } });
