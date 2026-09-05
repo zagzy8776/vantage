@@ -1,21 +1,6 @@
-export type JobProvider =
-  | "adzuna"
-  | "jsearch"
-  | "jobspipe"
-  | "hirebase"
-  | "theirstack"
-  | "myjobmag"
-  | "jobberman"
-  | "hotnigerianjobs"
-  | "jobgurus"
-  | "jobsinnigeria"
-  | "workinnigeria"
-  | "fuzu"
-  | "careerjet"
-  | "brightermonday"
-  | "careers24"
-  | "careerjunction"
-  | "pnet";
+export type JobProvider = "adzuna" | "jsearch" | "jobspipe" | "hirebase" | "theirstack";
+export type RegionalJobProvider = "myjobmag" | "jobberman" | "hotnigerianjobs" | "jobgurus" | "jobsinnigeria" | "workinnigeria" | "fuzu" | "careerjet" | "brightermonday" | "careers24" | "careerjunction" | "pnet";
+export type AnyJobProvider = JobProvider | RegionalJobProvider;
 
 export type JobVerificationStatus = "unverified" | "needs_verification" | "direct_employer_verified" | "rejected" | "stale";
 
@@ -51,15 +36,11 @@ export interface JobIntelligence {
   source?: "ai" | "evidence";
 }
 
-export interface JobContactEvidence {
-  value: string;
-  url: string;
-  reason: string;
-}
+export interface JobContactEvidence { value: string; url: string; reason: string; }
 
 export interface NormalizedJob {
   id: string;
-  provider: JobProvider;
+  provider: AnyJobProvider;
   title: string;
   companyName: string;
   companyDomain?: string;
@@ -100,7 +81,4 @@ export interface JobProviderResult {
   errorMessage?: string;
 }
 
-export interface JobDiscoveryProvider {
-  name: JobProvider;
-  search(query: JobSearchQuery): Promise<JobProviderResult>;
-}
+export interface JobDiscoveryProvider { name: JobProvider; search(query: JobSearchQuery): Promise<JobProviderResult>; }
