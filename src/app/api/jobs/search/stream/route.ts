@@ -18,24 +18,39 @@ type StreamEvent =
   | { type: "complete"; jobs: NormalizedJob[]; providers: ProviderState[]; diagnostics: Record<string, unknown>; pagination: Record<string, { totalCount?: number; nextCursor?: string; hasMore: boolean }> };
 
 function jsonLine(event: StreamEvent) { return `${JSON.stringify(event)}\n`; }
+function normalizeIdentity(value?: string) { return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim(); }
+function jobIdentityKey(job: NormalizedJob) {
+  const company = normalizeIdentity(job.companyDomain ?? job.companyName);
+  const title = normalizeIdentity(job.title);
+  const location = normalizeIdentity(job.city ?? job.location ?? job.countryCode ?? "");
+  const remote = job.remote ? "remote" : "onsite";
+  return `${company}|${title}|${location}|${remote}`;
+}
 
 function mergeJobs(current: NormalizedJob[], incoming: NormalizedJob[]) {
-  const byId = new Map(current.map((job) => [job.id, job]));
+  const byIdentity = new Map(current.map((job) => [jobIdentityKey(job), job]));
   for (const job of incoming) {
-    const existing = byId.get(job.id);
-    if (!existing) { byId.set(job.id, job); continue; }
-    byId.set(job.id, {
+    const key = jobIdentityKey(job);
+    const existing = byIdentity.get(key);
+    if (!existing) { byIdentity.set(key, job); continue; }
+    const requirements = Array.from(new Set([...(existing.requirements ?? []), ...(job.requirements ?? [])])).slice(0, 16);
+    const description = (job.description?.length ?? 0) > (existing.description?.length ?? 0) ? job.description : existing.description;
+    byIdentity.set(key, {
       ...existing,
       ...job,
+      id: existing.id,
+      description,
+      requirements,
       companyPhone: job.companyPhone ?? existing.companyPhone,
       companyEmail: job.companyEmail ?? existing.companyEmail,
       companyWebsite: job.companyWebsite ?? existing.companyWebsite,
       companyDomain: job.companyDomain ?? existing.companyDomain,
       applyUrl: job.applyUrl ?? existing.applyUrl,
       sourceUrl: job.sourceUrl ?? existing.sourceUrl,
+      sourceName: existing.sourceName ?? job.sourceName,
     });
   }
-  return Array.from(byId.values());
+  return Array.from(byIdentity.values());
 }
 
 function withIntelligence(jobs: NormalizedJob[]) { return jobs.map((job) => ({ ...job, intelligence: deterministicIntelligence(job) })); }
