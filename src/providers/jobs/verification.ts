@@ -1,4 +1,5 @@
 import type { NormalizedJob } from "./types";
+import { isAllowedByRobots } from "./robots";
 
 export interface JobVerification {
   status: "unverified" | "needs_verification" | "direct_employer_verified" | "rejected";
@@ -14,7 +15,7 @@ function isAts(value?: string) { const h = hostname(value) ?? ""; return ATS_HOS
 function companyTokens(name: string) { return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter((token) => token.length > 2 && !["the", "and", "ltd", "limited", "llc", "inc", "company", "corp", "corporation", "group", "holdings", "services"].includes(token)); }
 function matchesCompany(job: NormalizedJob, url?: string) { const host = hostname(url); if (!host || isAts(host)) return false; const tokens = companyTokens(job.companyName); const hostText = host.replace(/[^a-z0-9]+/g, " "); if (!tokens.length) return false; const compactName = job.companyName.toLowerCase().replace(/[^a-z0-9]/g, ""); const compactHost = host.replace(/[^a-z0-9]/g, ""); if (compactName && compactHost.includes(compactName)) return true; return tokens.filter((token) => hostText.includes(token)).length >= Math.min(2, tokens.length); }
 function sameHost(left?: string, right?: string) { const a = hostname(left); const b = hostname(right); return Boolean(a && b && (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`))); }
-async function fetchPage(url: string) { try { const response = await fetch(url, { cache: "no-store", redirect: "follow", signal: AbortSignal.timeout(12_000), headers: { Accept: "text/html,application/xhtml+xml" } }); if (!response.ok) return undefined; const type = response.headers.get("content-type") ?? ""; if (!/text\/html|application\/xhtml\+xml/i.test(type)) return undefined; return (await response.text()).slice(0, 250_000); } catch { return undefined; } }
+async function fetchPage(url: string) { try { if (!(await isAllowedByRobots(url))) return undefined; const response = await fetch(url, { cache: "no-store", redirect: "follow", signal: AbortSignal.timeout(12_000), headers: { Accept: "text/html,application/xhtml+xml", "User-Agent": "VantageJobsBot/1.0" } }); if (!response.ok) return undefined; const type = response.headers.get("content-type") ?? ""; if (!/text\/html|application\/xhtml\+xml/i.test(type)) return undefined; return (await response.text()).slice(0, 250_000); } catch { return undefined; } }
 function textFromHtml(value: string) { return value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&#39;|&apos;/gi, "'").replace(/&quot;/gi, '"').replace(/\s+/g, " ").trim(); }
 
 /** Provider listing pages are discovery evidence; public employer/ATS pages must corroborate the role before direct verification. */
