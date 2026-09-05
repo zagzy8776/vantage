@@ -6,7 +6,7 @@ import { renderJobPages } from "./firecrawl-renderer";
 import { verifyEmployer } from "./verification";
 import type { JobProvider, JobSearchQuery, NormalizedJob, RegionalJobProvider } from "./types";
 
-const GLOBAL_PROVIDERS: JobProvider[] = ["adzuna", "jsearch", "jobspipe", "hirebase", "theirstack"];
+const GLOBAL_PROVIDERS: JobProvider[] = ["adzuna", "jsearch", "jobspipe", "hirebase", "theirstack", "web_discovery"];
 const REGIONAL_PROVIDERS = new Set<RegionalJobProvider>(REGIONAL_SOURCE_REGISTRY.map((source) => source.provider));
 const DEEP_VERIFY_LIMIT = Math.max(4, Math.min(Number(process.env.JOB_DEEP_VERIFY_LIMIT) || 12, 24));
 
@@ -98,7 +98,8 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
   const defaultRegional = MARKET_REGIONAL_PRIORITY[country] ?? [];
   const regional = (requested?.filter((provider): provider is RegionalJobProvider => REGIONAL_PROVIDERS.has(provider as RegionalJobProvider)) ?? defaultRegional).slice(0, 12);
   const global = (requested?.filter((provider): provider is JobProvider => GLOBAL_PROVIDERS.includes(provider as JobProvider)) ?? GLOBAL_PROVIDERS).filter((provider) => GLOBAL_PROVIDERS.includes(provider));
-  const deepWeb = options?.deepWeb === false ? Promise.resolve([] as NormalizedJob[]) : runDeepWebJobDiscovery(query);
+  const shouldRunDeepWeb = options?.deepWeb !== false && (!requested || requested.includes("web_discovery"));
+  const deepWeb = shouldRunDeepWeb ? runDeepWebJobDiscovery(query) : Promise.resolve([] as NormalizedJob[]);
 
   const emptyGlobal = {
     jobs: [] as NormalizedJob[],
@@ -111,7 +112,7 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
   };
 
   const [globalDiscovery, regionalResults, deepJobs] = await Promise.all([
-    global.length ? runGlobalJobDiscovery(query, global, options) : Promise.resolve(emptyGlobal),
+    global.length ? runGlobalJobDiscovery(query, global.filter((provider) => provider !== "web_discovery"), options) : Promise.resolve(emptyGlobal),
     Promise.all(regional.map((provider) => crawlRegionalSource(provider, query))),
     deepWeb,
   ]);
@@ -123,6 +124,7 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
   const jobs = query.directOnly ? merged.filter((job) => job.verificationStatus === "direct_employer_verified") : merged;
   const providers = [
     ...globalDiscovery.providers,
+    ...(shouldRunDeepWeb ? [{ provider: "web_discovery" as JobProvider, status: researchedDeepJobs.length ? "success" : "zero-results", count: researchedDeepJobs.length, totalCount: researchedDeepJobs.length, errorMessage: undefined, acquisition: ["deep_web_search", "rendered_web", "employer_research"] }] : []),
     ...regionalResults.map((result) => ({ provider: result.provider, status: result.status, count: result.jobs.length, totalCount: result.totalCount ?? null, errorMessage: result.errorMessage, acquisition: result.acquisition ?? [] })),
   ];
   const pagination = {
@@ -130,7 +132,7 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
     ...Object.fromEntries(regionalResults.map((result) => [result.provider, { totalCount: result.totalCount ?? null, nextCursor: result.nextCursor ?? null, hasMore: Boolean(result.hasMore) }])),
     web_discovery: { totalCount: researchedDeepJobs.length, hasMore: false },
   };
-  const configuredProviders = [...globalDiscovery.configuredProviders, ...regionalResults.filter((result) => result.status !== "unavailable").map((result) => result.provider)];
+  const configuredProviders = [...globalDiscovery.configuredProviders, ...(shouldRunDeepWeb && researchedDeepJobs.length ? ["web_discovery"] : []), ...regionalResults.filter((result) => result.status !== "unavailable").map((result) => result.provider)];
 
   return {
     ...globalDiscovery,
