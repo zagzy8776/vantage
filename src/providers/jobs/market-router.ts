@@ -5,9 +5,9 @@ import { runDeepWebJobDiscovery } from "./deep-web-discovery";
 import { renderJobPages } from "./firecrawl-renderer";
 import { sanitizeDiscoveredJobs } from "./discovery-safety";
 import { verifyEmployer } from "./verification";
-import type { JobProvider, JobSearchQuery, NormalizedJob, RegionalJobProvider } from "./types";
+import type { JobProvider, JobSearchQuery, NormalizedJob, RegionalJobProvider, WebDiscoveryProvider } from "./types";
 
-const GLOBAL_PROVIDERS: JobProvider[] = ["adzuna", "jsearch", "jobspipe", "hirebase", "theirstack", "web_discovery"];
+const GLOBAL_PROVIDERS: JobProvider[] = ["adzuna", "jsearch", "jobspipe", "hirebase", "theirstack"];
 const REGIONAL_PROVIDERS = new Set<RegionalJobProvider>(REGIONAL_SOURCE_REGISTRY.map((source) => source.provider));
 const DEEP_VERIFY_LIMIT = Math.max(4, Math.min(Number(process.env.JOB_DEEP_VERIFY_LIMIT) || 12, 24));
 
@@ -23,7 +23,7 @@ function publicEmployerCandidate(job: NormalizedJob) {
     const host = url.hostname.toLowerCase().replace(/^www\./, "");
     const aggregatorHosts = ["myjobmag.com", "jobberman.com", "hotnigerianjobs.com", "jobgurus.com.ng", "jobsinnigeria.ng", "workinnigeria.org", "fuzu.com", "careerjet.com", "careerjet.co.za", "brightermonday.co.ke", "brightermonday.co.ug", "careers24.com", "careerjunction.co.za", "pnet.co.za", "careerlinkafrica.com", "jobsphere.net", "jobsearch.africa", "postkazi.com", "hiresasa.com", "talentpot.org", "worknation.africa", "closely.ng", "africajobline.com", "jobconnectafrica.com", "pac.africa"];
     const isAggregator = aggregatorHosts.some((candidate) => host === candidate || host.endsWith(`.${candidate}`));
-    if (isAggregator || /(?:greenhouse|lever|ashbyhq|smartrecruiters|workday|myworkday|icims|bamboohr|successfactors|oraclecloud)/i.test(host)) return undefined;
+    if (isAggregator || /(?:greenhouse|lever|ashby|smartrecruiters|workday|myworkday|icims|bamboohr|successfactors|oraclecloud)/i.test(host)) return undefined;
     return url.origin;
   } catch {
     return undefined;
@@ -93,7 +93,7 @@ function hideProviderBranding(jobs: NormalizedJob[]) {
   return jobs.map((job) => ({ ...job, sourceName: "Vantage intelligence" }));
 }
 
-export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Array<JobProvider | RegionalJobProvider>, options?: { verify?: boolean; deepWeb?: boolean }) {
+export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Array<JobProvider | RegionalJobProvider | WebDiscoveryProvider>, options?: { verify?: boolean; deepWeb?: boolean }) {
   const country = (query.countryCode ?? "NG").toUpperCase();
   const requested = selected?.length ? Array.from(new Set(selected)) : undefined;
   const defaultRegional = MARKET_REGIONAL_PRIORITY[country] ?? [];
@@ -113,7 +113,7 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
   };
 
   const [globalDiscovery, regionalResults, deepJobs] = await Promise.all([
-    global.length ? runGlobalJobDiscovery(query, global.filter((provider) => provider !== "web_discovery"), options) : Promise.resolve(emptyGlobal),
+    global.length ? runGlobalJobDiscovery(query, global, options) : Promise.resolve(emptyGlobal),
     Promise.all(regional.map((provider) => crawlRegionalSource(provider, query))),
     deepWeb,
   ]);
@@ -126,7 +126,7 @@ export async function runMarketJobDiscovery(query: JobSearchQuery, selected?: Ar
   const jobs = query.directOnly ? merged.filter((job) => job.verificationStatus === "direct_employer_verified") : merged;
   const providers = [
     ...globalDiscovery.providers,
-    ...(shouldRunDeepWeb ? [{ provider: "web_discovery" as JobProvider, status: researchedDeepJobs.length ? "success" : "zero-results", count: researchedDeepJobs.length, totalCount: researchedDeepJobs.length, errorMessage: undefined, acquisition: ["deep_web_search", "rendered_web", "employer_research"] }] : []),
+    ...(shouldRunDeepWeb ? [{ provider: "web_discovery" as WebDiscoveryProvider, status: researchedDeepJobs.length ? "success" : "zero-results", count: researchedDeepJobs.length, totalCount: researchedDeepJobs.length, errorMessage: undefined, acquisition: ["deep_web_search", "rendered_web", "employer_research"] }] : []),
     ...regionalResults.map((result) => ({ provider: result.provider, status: result.status, count: result.jobs.length, totalCount: result.totalCount ?? null, errorMessage: result.errorMessage, acquisition: result.acquisition ?? [] })),
   ];
   const pagination = {
