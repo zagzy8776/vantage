@@ -30,6 +30,13 @@ export interface JobIntelligence {
   confidence: number;
   provider?: string;
   model?: string;
+  source?: "ai" | "evidence";
+}
+
+export interface JobContactEvidence {
+  value: string;
+  url: string;
+  reason: string;
 }
 
 export interface NormalizedJob {
@@ -39,6 +46,10 @@ export interface NormalizedJob {
   companyName: string;
   companyDomain?: string;
   companyWebsite?: string;
+  companyPhone?: string;
+  companyEmail?: string;
+  companyContactUrl?: string;
+  companyContactEvidence?: JobContactEvidence[];
   description?: string;
   location?: string;
   countryCode?: string;
