@@ -14,24 +14,60 @@ type VantageSelectProps = {
 
 export function VantageSelect({ value, onChange, options, ariaLabel, className = "" }: VantageSelectProps) {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(() => Math.max(0, options.findIndex((option) => option.value === value)));
   const rootRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const listId = useId();
   const selected = options.find((option) => option.value === value) ?? options[0];
+
+  useEffect(() => {
+    const selectedIndex = options.findIndex((option) => option.value === value);
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+  }, [options, value]);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      if (!open || options.length === 0) return;
+
+      if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        setActiveIndex((current) => {
+          if (event.key === "ArrowDown") return (current + 1) % options.length;
+          if (event.key === "ArrowUp") return (current - 1 + options.length) % options.length;
+          return event.key === "Home" ? 0 : options.length - 1;
+        });
+        return;
+      }
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        const option = options[activeIndex];
+        if (option) {
+          onChange(option.value);
+          setOpen(false);
+        }
+      }
     };
+
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [activeIndex, onChange, open, options]);
+
+  useEffect(() => {
+    if (!open) return;
+    optionRefs.current[activeIndex]?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, open]);
 
   return (
     <div ref={rootRef} className={`relative ${className}`}>
@@ -41,14 +77,17 @@ export function VantageSelect({ value, onChange, options, ariaLabel, className =
         aria-expanded={open}
         aria-controls={listId}
         aria-label={ariaLabel}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          setActiveIndex(Math.max(0, options.findIndex((option) => option.value === value)));
+          setOpen((current) => !current);
+        }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             setOpen(true);
           }
         }}
-        className={`flex h-12 w-full items-center justify-between rounded-xl border bg-black/20 px-3 text-left text-sm outline-none transition duration-150 ${open ? "border-white/25 bg-white/[.045]" : "border-white/10 hover:border-white/15 hover:bg-white/[.025]"}`}
+        className={`flex h-12 w-full items-center justify-between rounded-xl border bg-black/20 px-3 text-left text-sm outline-none transition duration-150 focus-visible:border-white/30 focus-visible:ring-2 focus-visible:ring-white/10 ${open ? "border-white/25 bg-white/[.045]" : "border-white/10 hover:border-white/15 hover:bg-white/[.025]"}`}
       >
         <span className="truncate text-white/80">{selected?.label}</span>
         <svg className={`ml-2 h-4 w-4 shrink-0 text-white/35 transition-transform duration-150 ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -61,24 +100,28 @@ export function VantageSelect({ value, onChange, options, ariaLabel, className =
           id={listId}
           role="listbox"
           aria-label={ariaLabel}
-          className="vantage-select-menu absolute left-0 top-[calc(100%+8px)] z-50 w-full overflow-hidden rounded-xl border border-white/[.12] bg-[#111318]/[.98] p-1.5 shadow-[0_24px_70px_rgba(0,0,0,.55)] backdrop-blur-xl"
+          className="vantage-select-menu absolute left-0 top-[calc(100%+8px)] z-50 max-h-72 w-full min-w-[180px] overflow-y-auto overscroll-contain rounded-xl border border-white/[.12] bg-[#111318]/[.98] p-1.5 shadow-[0_24px_70px_rgba(0,0,0,.55)] backdrop-blur-xl"
         >
-          {options.map((option) => {
+          {options.map((option, index) => {
             const active = option.value === value;
+            const highlighted = index === activeIndex;
             return (
               <button
                 key={option.value}
+                ref={(element) => { optionRefs.current[index] = element; }}
                 type="button"
                 role="option"
                 aria-selected={active}
+                onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => {
                   onChange(option.value);
+                  setActiveIndex(index);
                   setOpen(false);
                 }}
-                className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition duration-100 ${active ? "bg-white/[.08] text-white" : "text-white/55 hover:bg-white/[.055] hover:text-white/90"}`}
+                className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition duration-100 ${highlighted ? "bg-white/[.07] text-white" : "text-white/55 hover:bg-white/[.055] hover:text-white/90"} ${active ? "font-medium" : ""}`}
               >
-                <span>{option.label}</span>
-                {active && <span className="text-xs text-white/45">✓</span>}
+                <span className="truncate">{option.label}</span>
+                {active && <span className="ml-3 shrink-0 text-xs text-white/45">✓</span>}
               </button>
             );
           })}
