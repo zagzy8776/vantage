@@ -1,4 +1,21 @@
-export type JobProvider = "adzuna" | "jsearch" | "jobspipe" | "hirebase" | "theirstack";
+export type JobProvider =
+  | "adzuna"
+  | "jsearch"
+  | "jobspipe"
+  | "hirebase"
+  | "theirstack"
+  | "myjobmag"
+  | "jobberman"
+  | "hotnigerianjobs"
+  | "jobgurus"
+  | "jobsinnigeria"
+  | "workinnigeria"
+  | "fuzu"
+  | "careerjet"
+  | "brightermonday"
+  | "careers24"
+  | "careerjunction"
+  | "pnet";
 
 export type JobVerificationStatus = "unverified" | "needs_verification" | "direct_employer_verified" | "rejected" | "stale";
 
@@ -8,6 +25,7 @@ export interface JobSearchQuery {
   countryCode?: string;
   city?: string;
   remote?: boolean;
+  directOnly?: boolean;
   limit?: number;
   postedWithinDays?: number;
   page?: number;
