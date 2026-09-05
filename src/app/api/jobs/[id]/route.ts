@@ -8,21 +8,19 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
-
   try {
-    const db = getDb();
-    const orgCondition = auth.organizationId ? sql`AND organization_id = ${auth.organizationId}` : sql``;
+    const db = getDb(); const orgCondition = auth.organizationId ? sql`AND organization_id = ${auth.organizationId}` : sql``;
     const result = await db.execute(sql`
       SELECT id, provider, title, company_name AS "companyName", company_domain AS "companyDomain", company_website AS "companyWebsite",
+        company_phone AS "companyPhone", company_email AS "companyEmail", company_contact_url AS "companyContactUrl", company_contact_evidence AS "companyContactEvidence",
         description, location, country_code AS "countryCode", city, employment_type AS "employmentType", remote,
         salary_min AS "salaryMin", salary_max AS "salaryMax", salary_currency AS "salaryCurrency", posted_at AS "postedAt", last_seen_at AS "lastSeenAt",
-        apply_url AS "applyUrl", source_url AS "sourceUrl", source_name AS "sourceName", requirements, verification_status AS "verificationStatus",
+        apply_url AS "applyUrl", source_url AS "sourceUrl", source_name AS "sourceName", requirements, job_intelligence AS "intelligence", verification_status AS "verificationStatus",
         verification_score AS "verificationScore", verification_reasons AS "verificationReasons", verification_evidence AS "verificationEvidence",
         stale, created_at AS "createdAt", updated_at AS "updatedAt"
       FROM jobs WHERE id = ${params.id} AND owner_id = ${auth.userId} ${orgCondition} LIMIT 1
     `);
-    const job = result.rows[0];
-    if (!job) return NextResponse.json({ error: "Job not found." }, { status: 404 });
+    const job = result.rows[0]; if (!job) return NextResponse.json({ error: "Job not found." }, { status: 404 });
     return NextResponse.json({ job }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
   } catch (error) {
     console.error(JSON.stringify({ diagnostic: "job_detail_failed", message: error instanceof Error ? error.message : String(error) }));
