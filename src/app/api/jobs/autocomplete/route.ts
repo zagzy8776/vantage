@@ -66,8 +66,9 @@ export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
   if (query.length < 2) return NextResponse.json({ suggestions: [] });
 
+  let learned: string[] = [];
   try {
-    const learned = await learnedTitles(query, auth.userId, auth.organizationId);
+    learned = await learnedTitles(query, auth.userId, auth.organizationId);
     if (learned.length >= 5) return NextResponse.json({ suggestions: learned, source: "learned" });
 
     const prompt = [
