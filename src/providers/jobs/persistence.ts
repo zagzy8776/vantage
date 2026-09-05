@@ -19,10 +19,11 @@ export async function persistJobs(jobs: NormalizedJob[], auth: Pick<AuthContext,
   const db = getDb(); let persisted = 0;
   for (const job of jobs) {
     const now = new Date(); const postedAt = dateOrNull(job.postedAt); const lastSeenAt = dateOrNull(job.lastSeenAt) ?? now;
-    const score = job.verificationScore ?? 0; const reasons = JSON.stringify(job.verificationReasons ?? []); const evidence = JSON.stringify(job.verificationEvidence ?? []); const requirements = JSON.stringify(job.requirements ?? []); const intelligence = JSON.stringify(job.intelligence ?? null);
+    const score = job.verificationScore ?? 0; const reasons = JSON.stringify(job.verificationReasons ?? []); const evidence = JSON.stringify(job.verificationEvidence ?? []); const requirements = JSON.stringify(job.requirements ?? []); const intelligence = JSON.stringify(job.intelligence ?? null); const contactEvidence = JSON.stringify(job.companyContactEvidence ?? []);
     await db.execute(sql`
       INSERT INTO jobs (
         id, provider, provider_job_id, title, company_name, company_domain, company_website,
+        company_phone, company_email, company_contact_url, company_contact_evidence,
         description, location, country_code, city, employment_type, remote,
         salary_min, salary_max, salary_currency, posted_at, last_seen_at,
         apply_url, source_url, source_name, requirements, job_intelligence,
@@ -30,6 +31,7 @@ export async function persistJobs(jobs: NormalizedJob[], auth: Pick<AuthContext,
         owner_id, organization_id, stale, created_at, updated_at
       ) VALUES (
         ${job.id}, ${job.provider}, ${providerJobId(job)}, ${job.title}, ${job.companyName}, ${job.companyDomain ?? null}, ${job.companyWebsite ?? null},
+        ${job.companyPhone ?? null}, ${job.companyEmail ?? null}, ${job.companyContactUrl ?? null}, ${contactEvidence}::jsonb,
         ${job.description ?? null}, ${job.location ?? null}, ${job.countryCode ?? null}, ${job.city ?? null}, ${job.employmentType ?? null}, ${job.remote ?? null},
         ${job.salaryMin ?? null}, ${job.salaryMax ?? null}, ${job.salaryCurrency ?? null}, ${postedAt}, ${lastSeenAt}, ${job.applyUrl ?? null}, ${job.sourceUrl ?? null}, ${job.sourceName ?? null}, ${requirements}::jsonb, ${intelligence}::jsonb,
         ${job.verificationStatus}, ${score}, ${reasons}::jsonb, ${auth.userId}, ${auth.organizationId ?? null}, false, ${now}, ${now}
@@ -38,6 +40,10 @@ export async function persistJobs(jobs: NormalizedJob[], auth: Pick<AuthContext,
         title = EXCLUDED.title, company_name = EXCLUDED.company_name,
         company_domain = COALESCE(EXCLUDED.company_domain, jobs.company_domain),
         company_website = COALESCE(EXCLUDED.company_website, jobs.company_website),
+        company_phone = COALESCE(EXCLUDED.company_phone, jobs.company_phone),
+        company_email = COALESCE(EXCLUDED.company_email, jobs.company_email),
+        company_contact_url = COALESCE(EXCLUDED.company_contact_url, jobs.company_contact_url),
+        company_contact_evidence = CASE WHEN jsonb_array_length(EXCLUDED.company_contact_evidence) > 0 THEN EXCLUDED.company_contact_evidence ELSE jobs.company_contact_evidence END,
         description = COALESCE(EXCLUDED.description, jobs.description), location = COALESCE(EXCLUDED.location, jobs.location),
         country_code = COALESCE(EXCLUDED.country_code, jobs.country_code), city = COALESCE(EXCLUDED.city, jobs.city), employment_type = COALESCE(EXCLUDED.employment_type, jobs.employment_type),
         remote = COALESCE(EXCLUDED.remote, jobs.remote), salary_min = COALESCE(EXCLUDED.salary_min, jobs.salary_min), salary_max = COALESCE(EXCLUDED.salary_max, jobs.salary_max),
@@ -61,6 +67,7 @@ export async function listPersistedJobs(auth: Pick<AuthContext, "userId" | "orga
   const [result, countResult] = await Promise.all([
     db.execute(sql`
       SELECT id, provider, title, company_name AS "companyName", company_domain AS "companyDomain", company_website AS "companyWebsite",
+        company_phone AS "companyPhone", company_email AS "companyEmail", company_contact_url AS "companyContactUrl", company_contact_evidence AS "companyContactEvidence",
         description, location, country_code AS "countryCode", city, employment_type AS "employmentType", remote,
         salary_min AS "salaryMin", salary_max AS "salaryMax", salary_currency AS "salaryCurrency", posted_at AS "postedAt", last_seen_at AS "lastSeenAt",
         apply_url AS "applyUrl", source_url AS "sourceUrl", source_name AS "sourceName", requirements, job_intelligence AS "intelligence", verification_status AS "verificationStatus",
