@@ -5,8 +5,8 @@ import type { DiscoveryQuery } from "@/providers/business/types";
 import { recordSearchRunOwner } from "./access";
 import { scopeDiscoveryResult } from "./scoping";
 
-/** How long a completed scan can seed another guest without re-calling providers. */
-const CACHE_TTL_MS = Number(process.env.DISCOVER_CACHE_TTL_MS) || 7 * 24 * 60 * 60_000;
+/** Keep discovery cache deliberately short so Discover does not look live while serving stale businesses. */
+const CACHE_TTL_MS = Number(process.env.DISCOVER_CACHE_TTL_MS) || 6 * 60 * 60_000;
 
 function normalizeCity(city: string | null | undefined) {
   return (city ?? "").trim().toLowerCase() || null;
@@ -21,10 +21,7 @@ function fingerprint(query: DiscoveryQuery) {
   };
 }
 
-/**
- * Find a recent completed scan with the same market fingerprint that still has results.
- * Used to avoid burning monthly Foursquare/Yelp/Firecrawl quota on identical searches.
- */
+/** Find a recent completed scan with the same market fingerprint that still has results. */
 export async function findReusableCompletedRun(query: DiscoveryQuery) {
   const fp = fingerprint(query);
   const since = new Date(Date.now() - CACHE_TTL_MS);
@@ -46,11 +43,10 @@ export async function findReusableCompletedRun(query: DiscoveryQuery) {
     .orderBy(desc(searchRuns.completedAt), desc(searchRuns.createdAt))
     .limit(8);
 
-  // City match: treat null/empty as the same "whole country" bucket.
   const match = rows.find((row) => normalizeCity(row.city) === fp.city);
   if (!match?.result || typeof match.result !== "object") return null;
   const results = Array.isArray((match.result as { results?: unknown }).results)
-    ? ((match.result as { results: unknown[] }).results)
+    ? (match.result as { results: unknown[] }).results
     : [];
   if (!results.length) return null;
   return match;
@@ -88,11 +84,7 @@ function newRunId() {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/**
- * Fork a completed scan into a private run for this guest.
- * Applies owner-level "seen" filtering so repeat visitors get new businesses when possible.
- * No external provider calls.
- */
+/** Fork a completed scan into a private run for this owner without calling providers again. */
 export async function forkCachedSearchRun(input: {
   sourceRunId: string;
   query: DiscoveryQuery;
@@ -136,7 +128,6 @@ export async function forkCachedSearchRun(input: {
     organizationId: input.organizationId,
   });
 
-  // Re-scope so this guest only sees businesses they have not already been shown.
   const scoped = await scopeDiscoveryResult(id, limit, source.result as Record<string, unknown>);
 
   await getDb()

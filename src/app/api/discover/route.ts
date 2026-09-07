@@ -34,56 +34,56 @@ export async function POST(request: NextRequest) {
 
     const query = validation.query;
 
-    // 1) Reuse a recent completed scan from the DB (no provider API spend).
-    //    Results are private to this guest and filtered against businesses they already saw.
-    try {
-      const cached = await findReusableCompletedRun(query);
-      if (cached) {
-        const forked = await forkCachedSearchRun({
-          sourceRunId: cached.id,
-          query,
-          ownerId: auth.userId,
-          organizationId: auth.organizationId,
-        });
-        if (forked && forked.resultCount > 0) {
+    // Deep discovery is intended to be a fresh research pass. Reusing a completed
+    // market scan here makes live Discover results look stale and prevents provider refresh.
+    if (query.depth !== "deep") {
+      try {
+        const cached = await findReusableCompletedRun(query);
+        if (cached) {
+          const forked = await forkCachedSearchRun({
+            sourceRunId: cached.id,
+            query,
+            ownerId: auth.userId,
+            organizationId: auth.organizationId,
+          });
+          if (forked && forked.resultCount > 0) {
+            console.info(
+              JSON.stringify({
+                diagnostic: "search_run_cache_hit",
+                runId: forked.runId,
+                sourceRunId: forked.sourceRunId,
+                resultCount: forked.resultCount,
+                ownerId: auth.userId,
+              }),
+            );
+            return NextResponse.json(
+              {
+                runId: forked.runId,
+                status: "completed",
+                cacheHit: true,
+                message: "Loaded from saved research — no new provider calls.",
+              },
+              { status: 200 },
+            );
+          }
           console.info(
             JSON.stringify({
-              diagnostic: "search_run_cache_hit",
-              runId: forked.runId,
-              sourceRunId: forked.sourceRunId,
-              resultCount: forked.resultCount,
+              diagnostic: "search_run_cache_exhausted",
+              sourceRunId: cached.id,
               ownerId: auth.userId,
             }),
           );
-          return NextResponse.json(
-            {
-              runId: forked.runId,
-              status: "completed",
-              cacheHit: true,
-              message: "Loaded from saved research — no new provider calls.",
-            },
-            { status: 200 },
-          );
         }
-        // Cache existed but this guest already saw every business → fall through to live search for new ones.
-        console.info(
+      } catch (cacheError) {
+        console.error(
           JSON.stringify({
-            diagnostic: "search_run_cache_exhausted",
-            sourceRunId: cached.id,
-            ownerId: auth.userId,
+            diagnostic: "search_run_cache_failed",
+            message: cacheError instanceof Error ? cacheError.message : String(cacheError),
           }),
         );
       }
-    } catch (cacheError) {
-      console.error(
-        JSON.stringify({
-          diagnostic: "search_run_cache_failed",
-          message: cacheError instanceof Error ? cacheError.message : String(cacheError),
-        }),
-      );
     }
 
-    // 2) Persist a private run for this guest.
     const runId = await createSearchRun(query);
     await recordSearchRunOwner({
       searchRunId: runId,
@@ -91,8 +91,6 @@ export async function POST(request: NextRequest) {
       organizationId: auth.organizationId,
     });
 
-    // 3) If the same market is already being researched live, still save this guest's run
-    //    but note that providers may already be warm — recovery/workflow handles work.
     const active = await findActiveMatchingRun(query).catch(() => null);
 
     const workerId = newWorkerId();
@@ -118,61 +116,29 @@ export async function POST(request: NextRequest) {
           runId,
           workflowRunId: workflowRun.runId,
           worker: workerId,
-          anonymous: Boolean(auth.isAnonymous),
-          ownerId: auth.userId,
-          activeMatchRunId: active?.id ?? null,
         }),
       );
-
       return NextResponse.json(
         {
           runId,
           status: "queued",
           workflowRunId: workflowRun.runId,
-          ...(active
-            ? {
-                warning:
-                  "Similar research is already running. Your scan is saved and will prioritize businesses you have not seen yet.",
-              }
-            : {}),
         },
         { status: 202 },
       );
-    } catch (workflowError) {
+    } catch (error) {
       await releaseSearchRunLock(runId, workerId).catch(() => undefined);
-      console.error(
-        JSON.stringify({
-          diagnostic: "search_run_workflow_start_failed",
-          runId,
-          message:
-            workflowError instanceof Error ? workflowError.message : String(workflowError),
-        }),
-      );
-      return NextResponse.json(
-        {
-          runId,
-          status: "queued",
-          warning:
-            "Scan saved. Background worker did not start yet — open Your scans and use Retry if it stays queued.",
-        },
-        { status: 202 },
-      );
+      throw error;
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes("DATABASE_URL")) {
-      return NextResponse.json(
-        { error: "Discovery database is unavailable." },
-        { status: 503 },
-      );
-    }
     console.error(
       JSON.stringify({
-        diagnostic: "discover_post_failed",
+        diagnostic: "search_run_create_failed",
         message: error instanceof Error ? error.message : String(error),
       }),
     );
     return NextResponse.json(
-      { error: "Unexpected discovery error. Please try again." },
+      { error: "Could not start discovery. Please try again in a moment." },
       { status: 500 },
     );
   }
