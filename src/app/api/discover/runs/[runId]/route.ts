@@ -30,10 +30,16 @@ function customerResult(result: Record<string, unknown> | null) {
     const sources = Array.isArray(resultSources[index])
       ? (resultSources[index] as unknown[]).filter((value): value is string => typeof value === "string")
       : [];
+    const externalId = typeof business.externalId === "string" ? business.externalId : `result_${index + 1}`;
+    const leadId = typeof storedIds[index] === "string"
+      ? storedIds[index]
+      : source && !externalId.startsWith("result_")
+        ? `lead_${source}_${externalId}`
+        : undefined;
 
     return {
-      leadId: typeof storedIds[index] === "string" ? storedIds[index] : undefined,
-      externalId: typeof business.externalId === "string" ? business.externalId : `result_${index + 1}`,
+      leadId,
+      externalId,
       source: source ?? sources[0] ?? "web",
       sources,
       name: typeof business.name === "string" ? business.name : `Research result ${index + 1}`,
