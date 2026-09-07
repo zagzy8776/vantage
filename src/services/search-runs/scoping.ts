@@ -17,15 +17,11 @@ type ScopedResult = Record<string, unknown> & {
   workflow?: Record<string, unknown>;
 };
 
-function businessIdFor(business: RawBusiness) {
-  if (typeof business.externalId !== "string" || typeof business.source !== "string") return null;
-  return `biz_${business.source}_${business.externalId}`;
-}
-
-function leadIdFor(businessId: string) {
-  const match = businessId.match(/^biz_(.+)_(.+)$/);
-  if (!match) return null;
-  return `lead_${match[1]}_${match[2]}`;
+function businessIdentity(business: RawBusiness) {
+  if (typeof business.externalId !== "string" || !business.externalId.trim() || typeof business.source !== "string" || !business.source.trim()) return null;
+  const businessId = `biz_${business.source}_${business.externalId}`;
+  const leadId = `lead_${business.source}_${business.externalId}`;
+  return { businessId, leadId };
 }
 
 export async function scopeDiscoveryResult(
@@ -39,18 +35,18 @@ export async function scopeDiscoveryResult(
     return { ...rawResult, results: [], resultSources: [], storedIds: [], totalUniqueResults: 0 } as ScopedResult;
   }
 
-  const rawResults = Array.isArray(rawResult.results) ? rawResult.results as RawBusiness[] : [];
+  const rawResults = Array.isArray(rawResult.results) ? (rawResult.results as RawBusiness[]) : [];
   const rawSources = Array.isArray(rawResult.resultSources) ? rawResult.resultSources : [];
 
   const candidates = rawResults
-    .map((business, index) => ({ business, index, businessId: businessIdFor(business) }))
-    .filter((item): item is { business: RawBusiness; index: number; businessId: string } => Boolean(item.businessId));
+    .map((business, index) => ({ business, index, identity: businessIdentity(business) }))
+    .filter((item): item is { business: RawBusiness; index: number; identity: { businessId: string; leadId: string } } => Boolean(item.identity));
 
   if (!candidates.length) {
     return { ...rawResult, results: [], resultSources: [], storedIds: [], totalUniqueResults: 0 } as ScopedResult;
   }
 
-  const candidateIds = candidates.map((item) => item.businessId);
+  const candidateIds = candidates.map((item) => item.identity.businessId);
   const values = candidateIds.map((id) => sql`${id}`);
   const seenQuery = sql`
     SELECT business_id
@@ -61,9 +57,9 @@ export async function scopeDiscoveryResult(
   const seenRows = await getDb().execute(seenQuery);
   const seen = new Set(seenRows.rows.map((row) => String((row as { business_id: string }).business_id)));
 
-  const visible = candidates.filter((item) => !seen.has(item.businessId)).slice(0, Math.max(0, requestedLimit));
-  const visibleBusinessIds = visible.map((item) => item.businessId);
-  const visibleLeadIds = visibleBusinessIds.map(leadIdFor).filter((id): id is string => Boolean(id));
+  const visible = candidates.filter((item) => !seen.has(item.identity.businessId)).slice(0, Math.max(0, requestedLimit));
+  const visibleBusinessIds = visible.map((item) => item.identity.businessId);
+  const visibleLeadIds = visible.map((item) => item.identity.leadId);
 
   if (visibleBusinessIds.length) {
     const runValues = visibleBusinessIds.map((id) => sql`(${runId}, ${id})`);
